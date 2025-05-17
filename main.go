@@ -11,10 +11,11 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
-type ArtifactoryRepo struct {
+type ArtifactoryRepoResponse struct {
 	Key         string `json:"key"`
 	Description string `json:"description"`
 	Type        string `json:"type"`
@@ -22,7 +23,7 @@ type ArtifactoryRepo struct {
 	PackageType string `json:"packageType"`
 }
 
-type ArtifactoryRepoSend struct {
+type ArtifactoryRepoRequest struct {
 	Key         string `json:"key,omitempty"`
 	Description string `json:"description,omitempty"`
 	Rclass      string `json:"rclass"`
@@ -134,35 +135,101 @@ func main() {
 
 	data, err := os.ReadFile(tokenfile)
 	if err != nil {
-		fmt.Println("Error reading file:", err)
+		fmt.Printf("Error reading file: %v\n", err)
 		os.Exit(1)
 	}
 	token := string(data)
 
 	client := &http.Client{}
 
+	var reposToProvision []Repo
+
+	if !*generate {
+		reposToProvision, err = validateRepoFile(repofile)
+		if err != nil {
+			fmt.Printf("Error validating repo file: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	repos, users, groups, permissiondetails, err := getStuff(client, baseurl, token)
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	if *generate {
 		generete(repos, permissiondetails, repofile)
 		if err != nil {
-			fmt.Println("Error generating:", err)
+			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		err = provision(repofile, repos, users, groups, permissiondetails, client, baseurl, token, *dryRun)
+		err = provision(reposToProvision, repos, users, groups, permissiondetails, client, baseurl, token, *dryRun)
 		if err != nil {
-			fmt.Println("Error provisioning:", err)
+			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
 		}
 	}
 }
 
-func generete(repos []ArtifactoryRepo, permissiondetails []ArtifactoryPermissionDetails, repofile string) error {
+func validateRepoFile(repofile string) ([]Repo, error) {
+	file, err := os.Open(repofile)
+	if err != nil {
+		return nil, fmt.Errorf("error opening file: %w", err)
+	}
+	defer file.Close()
+
+	var reposToProvision []Repo
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&reposToProvision)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing json file: %w", err)
+	}
+
+	reposToProvision = removeDups(reposToProvision)
+
+	return reposToProvision, nil
+}
+
+func removeDups(reposToProvision []Repo) []Repo {
+	reposToDelete := make(map[string][]int)
+
+	for i := range reposToProvision {
+		name := reposToProvision[i].Name
+		for j := i + 1; j < len(reposToProvision); j++ {
+			if name == reposToProvision[j].Name {
+				indices, ok := reposToDelete[name]
+				if !ok {
+					reposToDelete[name] = []int{i}
+				}
+				if !slices.Contains(indices, j) {
+					reposToDelete[name] = append(reposToDelete[name], j)
+				}
+			}
+		}
+	}
+	for key, value := range reposToDelete {
+		stringslice := make([]string, len(value))
+		for i, num := range value {
+			stringslice[i] = strconv.Itoa(num + 1)
+		}
+		fmt.Printf("Warning: Ignoring repos due to duplicate name. Name: '%s', Indices: %s\n", key, strings.Join(stringslice, ", "))
+	}
+
+	repoIndicesToDelete := []int{}
+	for _, value := range reposToDelete {
+		repoIndicesToDelete = append(repoIndicesToDelete, value...)
+	}
+	sort.Ints(repoIndicesToDelete)
+	for i := len(repoIndicesToDelete) - 1; i >= 0; i-- {
+		reposToProvision = slices.Delete(reposToProvision, i, i+1)
+	}
+
+	return reposToProvision
+}
+
+func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, repofile string) error {
 	reposToSave := make([]Repo, len(repos))
 
 	for i, repo := range repos {
@@ -248,48 +315,48 @@ func generete(repos []ArtifactoryRepo, permissiondetails []ArtifactoryPermission
 	return nil
 }
 
-func getStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryRepo, []ArtifactoryUser, []ArtifactoryGroup, []ArtifactoryPermissionDetails, error) {
+func getStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryRepoResponse, []ArtifactoryUser, []ArtifactoryGroup, []ArtifactoryPermissionDetails, error) {
 	repos, err := getRepos(client, baseurl, token)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	fmt.Println("Repo count: ", len(repos))
+	fmt.Printf("Repo count: %d\n", len(repos))
 
 	permissions, err := getPermissions(client, baseurl, token)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	fmt.Println("Permissions count: ", len(permissions))
+	fmt.Printf("Permissions count: %d\n", len(permissions))
 
 	users, err := getUsers(client, baseurl, token)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	fmt.Println("User count: ", len(users))
+	fmt.Printf("User count: %d\n", len(users))
 
 	groups, err := getGroups(client, baseurl, token)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	fmt.Println("Group count: ", len(groups))
+	fmt.Printf("Group count: %d\n", len(groups))
 
 	permissiondetails, err := getPermissionDetails(client, baseurl, token, permissions)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	fmt.Println("Permission details count: ", len(permissiondetails))
+	fmt.Printf("Permission details count: %d\n", len(permissiondetails))
 
 	return repos, users, groups, permissiondetails, nil
 }
 
 func provision(
-	filename string,
-	allrepos []ArtifactoryRepo,
+	reposToProvision []Repo,
+	allrepos []ArtifactoryRepoResponse,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
@@ -298,22 +365,9 @@ func provision(
 	token string,
 	dryrun bool) error {
 
-	file, err := os.Open(filename)
-	if err != nil {
-		return fmt.Errorf("error opening file: %w", err)
-	}
-	defer file.Close()
-
-	var reposToProvision []Repo
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&reposToProvision)
-	if err != nil {
-		return fmt.Errorf("error parsing json file: %w", err)
-	}
-
-	fmt.Println("Repos to provision: ", len(reposToProvision))
+	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
 	for index, repo := range reposToProvision {
-		err = provisionRepo(repo, allrepos, allusers, allgroups, allpermissiondetails, client, baseurl, token, dryrun)
+		err := provisionRepo(repo, allrepos, allusers, allgroups, allpermissiondetails, client, baseurl, token, dryrun)
 		if err != nil {
 			fmt.Printf("Warning: Ignoring repo %d '%s': %v\n", index+1, repo.Name, err)
 		}
@@ -324,7 +378,7 @@ func provision(
 
 func provisionRepo(
 	repo Repo,
-	allrepos []ArtifactoryRepo,
+	allrepos []ArtifactoryRepoResponse,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
@@ -342,7 +396,6 @@ func provisionRepo(
 	}
 
 	if repo.Rclass == "" {
-		fmt.Printf("Warning: Missing rclass for repo, using local: '%s'\n", repo.Name)
 		repo.Rclass = "local"
 	}
 
@@ -390,35 +443,24 @@ func provisionRepo(
 		}
 	}
 
-	fmt.Println()
-	fmt.Printf("Name: '%s'\n", repo.Name)
-	fmt.Printf("Description: '%s'\n", repo.Description)
-	fmt.Printf("Rclass: '%s'\n", repo.Rclass)
-	fmt.Printf("PackageType: '%s'\n", repo.PackageType)
-	fmt.Printf("Read: '%s'\n", strings.Join(repo.Read, "', '"))
-	fmt.Printf("Write: '%s'\n", strings.Join(repo.Write, "', '"))
-	fmt.Printf("Annotate: '%s'\n", strings.Join(repo.Annotate, "', '"))
-	fmt.Printf("Delete: '%s'\n", strings.Join(repo.Delete, "', '"))
-	fmt.Printf("Manage: '%s'\n", strings.Join(repo.Manage, "', '"))
-
 	if repoExists {
-		fmt.Printf("Repo '%s' already exists, updating...\n", repo.Name)
+		fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
 
-		url := baseurl + "/artifactory/api/repositories/" + repo.Name
+		url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
 
 		// Todo: Fields (not key/name) might be overwritten with new values, if so, print out a diff
-		artifactoryrepo := ArtifactoryRepoSend{
+		artifactoryrepo := ArtifactoryRepoRequest{
 			Key:         repo.Name,
 			Description: repo.Description,
 			Rclass:      repo.Rclass,
 			PackageType: repo.PackageType,
 		}
 
-		jsonData, err := json.Marshal(artifactoryrepo)
+		json, err := json.Marshal(artifactoryrepo)
 		if err != nil {
 			return fmt.Errorf("error updating repo, error generating json: %w", err)
 		}
-		req, err := http.NewRequest("PUT", url, strings.NewReader(string(jsonData)))
+		req, err := http.NewRequest("PUT", url, strings.NewReader(string(json)))
 		if err != nil {
 			return fmt.Errorf("error updating repo, error creating request: %w", err)
 		}
@@ -444,21 +486,21 @@ func provisionRepo(
 			}
 		*/
 	} else {
-		fmt.Printf("Repo '%s' does not exist, creating...\n", repo.Name)
+		//fmt.Printf("Repo '%s' does not exist, creating...\n", repo.Name)
 
-		url := baseurl + "/artifactory/api/repositories/" + repo.Name
-		artifactoryrepo := ArtifactoryRepoSend{
+		url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
+		artifactoryrepo := ArtifactoryRepoRequest{
 			Key:         repo.Name,
 			Description: repo.Description,
 			Rclass:      repo.Rclass,
 			PackageType: repo.PackageType,
 		}
 
-		jsonData, err := json.Marshal(artifactoryrepo)
+		json, err := json.Marshal(artifactoryrepo)
 		if err != nil {
 			return fmt.Errorf("error creating repo, error generating json: %w", err)
 		}
-		req, err := http.NewRequest("PUT", url, strings.NewReader(string(jsonData)))
+		req, err := http.NewRequest("PUT", url, strings.NewReader(string(json)))
 		if err != nil {
 			return fmt.Errorf("error creating repo, error creating request: %w", err)
 		}
@@ -481,7 +523,7 @@ func provisionRepo(
 				fmt.Printf("Response body: '%s'\n", body)
 				return fmt.Errorf("error creating repo")
 			} else {
-				fmt.Printf("Created repo successfully: '%s'\n", repo.Name)
+				//fmt.Printf("Created repo successfully: '%s'\n", repo.Name)
 			}
 		}
 	}
@@ -495,11 +537,11 @@ func provisionRepo(
 	}
 
 	if permissionTargetExists {
-		fmt.Printf("Permission target '%s' already exists, updating...\n", repo.Name)
+		//fmt.Printf("Permission target '%s' already exists, updating...\n", repo.Name)
 	} else {
-		fmt.Printf("Permission target '%s' doesn't exist, creating...\n", repo.Name)
+		//fmt.Printf("Permission target '%s' doesn't exist, creating...\n", repo.Name)
 
-		url := baseurl + "/access/api/v2/permissions"
+		url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 
 		users, groups := convertUsersAndGroups(repo, allusers, allgroups)
 
@@ -522,14 +564,14 @@ func provisionRepo(
 			},
 		}
 
-		jsonData, err := json.Marshal(artifactorypermissiontarget)
+		json, err := json.Marshal(artifactorypermissiontarget)
 
-		fmt.Printf("jsonData: '%s'\n", string(jsonData))
+		//fmt.Printf("json: '%s'\n", string(json))
 
 		if err != nil {
 			return fmt.Errorf("error creating permission target, error generating json: %w", err)
 		}
-		req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonData)))
+		req, err := http.NewRequest("POST", url, strings.NewReader(string(json)))
 		if err != nil {
 			return fmt.Errorf("error creating permission target, error creating request: %w", err)
 		}
@@ -552,7 +594,7 @@ func provisionRepo(
 				fmt.Printf("Response body: '%s'\n", body)
 				return fmt.Errorf("error creating permission target")
 			} else {
-				fmt.Printf("Created permission target successfully: '%s'\n", repo.Name)
+				//fmt.Printf("Created permission target successfully: '%s'\n", repo.Name)
 			}
 		}
 	}
@@ -674,9 +716,9 @@ func getUsers(client *http.Client, baseurl string, token string) ([]ArtifactoryU
 func getUsersPage(client *http.Client, baseurl string, token string, cursor string) ([]ArtifactoryUser, string, error) {
 	var url string
 	if cursor == "" {
-		url = baseurl + "/access/api/v2/users"
+		url = fmt.Sprintf("%s/access/api/v2/users", baseurl)
 	} else {
-		url = baseurl + "/access/api/v2/users?cursor=" + cursor
+		url = fmt.Sprintf("%s/access/api/v2/users?cursor=%s", baseurl, cursor)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -746,9 +788,9 @@ func getGroups(client *http.Client, baseurl string, token string) ([]Artifactory
 func getGroupsPage(client *http.Client, baseurl string, token string, cursor string) ([]ArtifactoryGroup, string, error) {
 	var url string
 	if cursor == "" {
-		url = baseurl + "/access/api/v2/groups"
+		url = fmt.Sprintf("%s/access/api/v2/groups", baseurl)
 	} else {
-		url = baseurl + "/access/api/v2/groups?cursor=" + cursor
+		url = fmt.Sprintf("%s/access/api/v2/groups?cursor=%s", baseurl, cursor)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -784,8 +826,8 @@ func getGroupsPage(client *http.Client, baseurl string, token string, cursor str
 	return groups.Groups, groups.Cursor, nil
 }
 
-func getRepos(client *http.Client, baseurl string, token string) ([]ArtifactoryRepo, error) {
-	url := baseurl + "/artifactory/api/repositories"
+func getRepos(client *http.Client, baseurl string, token string) ([]ArtifactoryRepoResponse, error) {
+	url := fmt.Sprintf("%s/artifactory/api/repositories", baseurl)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
@@ -815,7 +857,7 @@ func getRepos(client *http.Client, baseurl string, token string) ([]ArtifactoryR
 		return nil, fmt.Errorf("error saving response body: %w", err)
 	}
 
-	var repos []ArtifactoryRepo
+	var repos []ArtifactoryRepoResponse
 	err = json.Unmarshal(body, &repos)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing response body: %w", err)
@@ -858,9 +900,9 @@ func getPermissions(client *http.Client, baseurl string, token string) ([]Artifa
 func getPermissionsPage(client *http.Client, baseurl string, token string, cursor string) ([]ArtifactoryPermission, string, error) {
 	var url string
 	if cursor == "" {
-		url = baseurl + "/access/api/v2/permissions"
+		url = fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 	} else {
-		url = baseurl + "/access/api/v2/permissions?cursor=" + cursor
+		url = fmt.Sprintf("%s/access/api/v2/permissions?cursor=%s", baseurl, cursor)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -902,7 +944,7 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 	for _, permission := range permissions {
 		fmt.Print(".")
 
-		url := baseurl + "/access/api/v2/permissions/" + url.PathEscape(permission.Name)
+		url := fmt.Sprintf("%s/access/api/v2/permissions/%s", baseurl, url.PathEscape(permission.Name))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, fmt.Errorf("error creating request: %w", err)
@@ -942,6 +984,8 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 
 		allpermissiondetails = append(allpermissiondetails, permissiondetails)
 	}
+
+	fmt.Println()
 
 	json, err := json.MarshalIndent(allpermissiondetails, "", "  ")
 	if err != nil {
