@@ -101,6 +101,7 @@ type Repo struct {
 }
 
 func main() {
+	useAllPermissionTargetsAsSource := flag.Bool("a", false, "Use all permission targets as source, when generating.")
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
 	overwrite := flag.Bool("o", false, "Allow overwriting of existing repo file.")
@@ -108,7 +109,7 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if len(args) < 3 || args[0] == "" || args[1] == "" || args[2] == "" {
-		fmt.Println("Usage: artsync [-d] [-g] [-o] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+		fmt.Println("Usage: artsync [-a] [-d] [-g] [-o] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 		fmt.Println()
 		flag.Usage()
 		fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
@@ -172,7 +173,7 @@ func main() {
 	}
 
 	if *generate {
-		generete(repos, permissiondetails, repofiles[0])
+		generete(repos, permissiondetails, *useAllPermissionTargetsAsSource, repofiles[0])
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -296,7 +297,7 @@ func removeDups(repos []Repo) []Repo {
 	return repos
 }
 
-func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, repofile string) error {
+func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, useAllPermissionTargetsAsSource bool, repofile string) error {
 	reposToSave := make([]Repo, len(repos))
 
 	for i, repo := range repos {
@@ -313,41 +314,20 @@ func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPe
 			reposToSave[i].PackageType = ""
 		}
 
-		for _, permission := range permissiondetails {
-			if permission.Name == repo.Key {
-				for key, permissions := range permission.Resources.Artifact.Actions.Users {
-					if slices.Contains(permissions, "READ") {
-						reposToSave[i].Read = append(reposToSave[i].Read, key)
-					}
-					if slices.Contains(permissions, "WRITE") {
-						reposToSave[i].Write = append(reposToSave[i].Write, key)
-					}
-					if slices.Contains(permissions, "ANNOTATE") {
-						reposToSave[i].Annotate = append(reposToSave[i].Annotate, key)
-					}
-					if slices.Contains(permissions, "DELETE") {
-						reposToSave[i].Delete = append(reposToSave[i].Delete, key)
-					}
-					if slices.Contains(permissions, "MANAGE") {
-						reposToSave[i].Manage = append(reposToSave[i].Manage, key)
+		if useAllPermissionTargetsAsSource {
+			for _, permission := range permissiondetails {
+				for reponame := range permission.Resources.Artifact.Targets {
+					if reponame == repo.Key {
+						addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Users)
+						addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Groups)
 					}
 				}
-				for key, permissions := range permission.Resources.Artifact.Actions.Groups {
-					if slices.Contains(permissions, "READ") {
-						reposToSave[i].Read = append(reposToSave[i].Read, key)
-					}
-					if slices.Contains(permissions, "WRITE") {
-						reposToSave[i].Write = append(reposToSave[i].Write, key)
-					}
-					if slices.Contains(permissions, "ANNOTATE") {
-						reposToSave[i].Annotate = append(reposToSave[i].Annotate, key)
-					}
-					if slices.Contains(permissions, "DELETE") {
-						reposToSave[i].Delete = append(reposToSave[i].Delete, key)
-					}
-					if slices.Contains(permissions, "MANAGE") {
-						reposToSave[i].Manage = append(reposToSave[i].Manage, key)
-					}
+			}
+		} else {
+			for _, permission := range permissiondetails {
+				if permission.Name == repo.Key {
+					addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Users)
+					addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Groups)
 				}
 			}
 		}
@@ -380,6 +360,26 @@ func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPe
 	}
 
 	return nil
+}
+
+func addPermissionsToRepo(reposToSave []Repo, i int, permissions map[string][]string) {
+	for name, rolePermissions := range permissions {
+		if slices.Contains(rolePermissions, "READ") {
+			reposToSave[i].Read = append(reposToSave[i].Read, name)
+		}
+		if slices.Contains(rolePermissions, "WRITE") {
+			reposToSave[i].Write = append(reposToSave[i].Write, name)
+		}
+		if slices.Contains(rolePermissions, "ANNOTATE") {
+			reposToSave[i].Annotate = append(reposToSave[i].Annotate, name)
+		}
+		if slices.Contains(rolePermissions, "DELETE") {
+			reposToSave[i].Delete = append(reposToSave[i].Delete, name)
+		}
+		if slices.Contains(rolePermissions, "MANAGE") {
+			reposToSave[i].Manage = append(reposToSave[i].Manage, name)
+		}
+	}
 }
 
 func getStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryRepoResponse, []ArtifactoryUser, []ArtifactoryGroup, []ArtifactoryPermissionDetails, error) {
@@ -672,10 +672,10 @@ func provisionPermissionTarget(
 			for _, pd := range allpermissiondetails {
 				if pd.Name == repo.Name {
 					if !equalStringSliceMaps(pd.Resources.Artifact.Actions.Users, users) {
-						fmt.Printf("'%s': Users diff: '%s' -> '%s'\n", repo.Name, pd.Resources.Artifact.Actions.Users, users)
+						printDiff(repo, pd.Resources.Artifact.Actions.Users, users, "Users")
 					}
 					if !equalStringSliceMaps(pd.Resources.Artifact.Actions.Groups, groups) {
-						fmt.Printf("'%s': Groups diff: '%s' -> '%s'\n", repo.Name, pd.Resources.Artifact.Actions.Groups, groups)
+						printDiff(repo, pd.Resources.Artifact.Actions.Groups, groups, "Groups")
 					}
 				}
 			}
@@ -790,6 +790,50 @@ func provisionPermissionTarget(
 	return nil
 }
 
+func printDiff(repo Repo, old map[string][]string, new map[string][]string, kind string) {
+	var names []string
+	for name := range old {
+		names = append(names, name)
+	}
+	for name := range new {
+		names = append(names, name)
+	}
+	names = uniqueStrings(names)
+	slices.Sort(names)
+
+	for _, name := range names {
+		foundOld := false
+		if _, ok := old[name]; ok {
+			foundOld = true
+		}
+		foundNew := false
+		if _, ok := new[name]; ok {
+			foundNew = true
+		}
+
+		if foundOld && foundNew {
+			permissionsOld := old[name]
+			slices.Sort(permissionsOld)
+			permissionsNew := new[name]
+			slices.Sort(permissionsNew)
+
+			if !slices.Equal(permissionsOld, permissionsNew) {
+				fmt.Printf("'%s': %s diff: '%s': %s -> %s\n", repo.Name, kind, name, strings.Join(permissionsOld, ", "), strings.Join(permissionsNew, ", "))
+			}
+		} else if foundOld && !foundNew {
+			permissionsOld := old[name]
+			slices.Sort(permissionsOld)
+
+			fmt.Printf("'%s': %s diff: '%s': %s -> removed.\n", repo.Name, kind, name, strings.Join(permissionsOld, ", "))
+		} else if !foundOld && foundNew {
+			permissionsNew := new[name]
+			slices.Sort(permissionsNew)
+
+			fmt.Printf("'%s': %s diff: '%s': notexist -> %s\n", repo.Name, kind, name, strings.Join(permissionsNew, ", "))
+		}
+	}
+}
+
 func equalStringSliceMaps(a map[string][]string, b map[string][]string) bool {
 	if len(a) != len(b) {
 		return false
@@ -806,6 +850,18 @@ func equalStringSliceMaps(a map[string][]string, b map[string][]string) bool {
 		}
 	}
 	return true
+}
+
+func uniqueStrings(input []string) []string {
+	seen := make(map[string]struct{})
+	var result []string
+	for _, v := range input {
+		if _, ok := seen[v]; !ok {
+			seen[v] = struct{}{}
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 func convertUsersAndGroups(repo Repo, allusers []ArtifactoryUser, allgroups []ArtifactoryGroup) (map[string][]string, map[string][]string) {
