@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -87,15 +86,18 @@ type ArtifactoryGroup struct {
 }
 
 type Repo struct {
-	Name        string   `json:"name"`
-	PackageType string   `json:"packageType,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Rclass      string   `json:"rclass,omitempty"`
-	Read        []string `json:"read,omitempty"`
-	Write       []string `json:"write,omitempty"`
-	Annotate    []string `json:"annotate,omitempty"`
-	Delete      []string `json:"delete,omitempty"`
-	Manage      []string `json:"manage,omitempty"`
+	Name         string   `json:"name"`
+	PackageType  string   `json:"packageType,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Rclass       string   `json:"rclass,omitempty"`
+	Read         []string `json:"read,omitempty"`
+	Write        []string `json:"write,omitempty"`
+	Annotate     []string `json:"annotate,omitempty"`
+	Delete       []string `json:"delete,omitempty"`
+	Manage       []string `json:"manage,omitempty"`
+	SourceFile   string   `json:"-"`
+	SourceOffset int64    `json:"-"`
+	SourceLine   int      `json:"-"`
 }
 
 func main() {
@@ -105,8 +107,8 @@ func main() {
 
 	flag.Parse()
 	args := flag.Args()
-	if len(args) != 3 || args[0] == "" || args[1] == "" || args[2] == "" {
-		fmt.Println("Usage: artsync [-d] [-g] [-o] <baseurl> <repofile> <tokenfile>")
+	if len(args) < 3 || args[0] == "" || args[1] == "" || args[2] == "" {
+		fmt.Println("Usage: artsync [-d] [-g] [-o] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 		fmt.Println()
 		flag.Usage()
 		fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
@@ -116,19 +118,30 @@ func main() {
 	}
 
 	baseurl := args[0]
-	repofile := args[1]
-	tokenfile := args[2]
+	tokenfile := args[1]
+	repofiles := args[2:]
+
+	if *generate && len(repofiles) > 1 {
+		fmt.Println("Only one repo file is allowed when using -g flag.")
+		os.Exit(1)
+	}
 
 	if !*generate {
-		if _, err := os.Stat(repofile); os.IsNotExist(err) {
-			fmt.Printf("File not found: '%s'\n", repofile)
+		success := true
+		for _, repofile := range repofiles {
+			if _, err := os.Stat(repofile); os.IsNotExist(err) {
+				fmt.Printf("Repo file not found: '%s'\n", repofile)
+				success = false
+			}
+		}
+		if !success {
 			os.Exit(1)
 		}
 	}
 
 	if *generate && !*overwrite {
-		if _, err := os.Stat(repofile); err == nil {
-			fmt.Printf("File already exists, will not overwrite: '%s'\n", repofile)
+		if _, err := os.Stat(repofiles[0]); err == nil {
+			fmt.Printf("File already exists, will not overwrite: '%s'\n", repofiles[0])
 			os.Exit(1)
 		}
 	}
@@ -145,7 +158,7 @@ func main() {
 	var reposToProvision []Repo
 
 	if !*generate {
-		reposToProvision, err = validateRepoFile(repofile)
+		reposToProvision, err = loadRepoFiles(repofiles)
 		if err != nil {
 			fmt.Printf("Error validating repo file: %v\n", err)
 			os.Exit(1)
@@ -159,7 +172,7 @@ func main() {
 	}
 
 	if *generate {
-		generete(repos, permissiondetails, repofile)
+		generete(repos, permissiondetails, repofiles[0])
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -173,60 +186,113 @@ func main() {
 	}
 }
 
-func validateRepoFile(repofile string) ([]Repo, error) {
-	file, err := os.Open(repofile)
-	if err != nil {
-		return nil, fmt.Errorf("error opening file: %w", err)
+func loadRepoFiles(repofile []string) ([]Repo, error) {
+	var allrepos []Repo
+
+	for _, repofile := range repofile {
+		data, err := os.ReadFile(repofile)
+		if err != nil {
+			return nil, fmt.Errorf("error reading file: %w", err)
+		}
+
+		var repos []Repo
+		decoder := json.NewDecoder(strings.NewReader(string(data)))
+		err = decoder.Decode(&repos)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing json file: %w", err)
+		}
+
+		decoder = json.NewDecoder(strings.NewReader(string(data)))
+		offsets := []int64{}
+
+		for {
+			t, err := decoder.Token()
+			if err != nil {
+				break
+			}
+			if t == json.Delim('{') {
+				offsets = append(offsets, decoder.InputOffset()-1)
+			}
+		}
+		if len(offsets) != len(repos) {
+			fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of json objects (%d)\n",
+				repofile, len(repos), len(offsets))
+		}
+		for i := range repos {
+			repos[i].SourceFile = repofile
+			repos[i].SourceOffset = offsets[i]
+			line := 1
+			for j := range data {
+				if data[j] == '\n' {
+					line++
+				}
+				if int(offsets[i]) == j {
+					break
+				}
+			}
+			repos[i].SourceLine = line
+		}
+
+		allrepos = append(allrepos, repos...)
 	}
-	defer file.Close()
 
-	var reposToProvision []Repo
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&reposToProvision)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing json file: %w", err)
-	}
+	allrepos = removeDups(allrepos)
 
-	reposToProvision = removeDups(reposToProvision)
-
-	return reposToProvision, nil
+	return allrepos, nil
 }
 
-func removeDups(reposToProvision []Repo) []Repo {
-	reposToDelete := make(map[string][]int)
+func removeDups(repos []Repo) []Repo {
+	type jsonobject struct {
+		Index      int
+		SourceFile string
+		SourceLine int
+	}
 
-	for i := range reposToProvision {
-		name := reposToProvision[i].Name
-		for j := i + 1; j < len(reposToProvision); j++ {
-			if name == reposToProvision[j].Name {
+	reposToDelete := make(map[string][]jsonobject)
+
+	for i := range repos {
+		name := repos[i].Name
+		for j := i + 1; j < len(repos); j++ {
+			if name == repos[j].Name {
 				indices, ok := reposToDelete[name]
 				if !ok {
-					reposToDelete[name] = []int{i}
+					jo := jsonobject{Index: i, SourceFile: repos[i].SourceFile, SourceLine: repos[i].SourceLine}
+					reposToDelete[name] = []jsonobject{jo}
 				}
-				if !slices.Contains(indices, j) {
-					reposToDelete[name] = append(reposToDelete[name], j)
+				found := false
+				for _, index := range indices {
+					if index.Index == j {
+						found = true
+						break
+					}
+				}
+				if !found {
+					jo := jsonobject{Index: j, SourceFile: repos[j].SourceFile, SourceLine: repos[j].SourceLine}
+					reposToDelete[name] = append(reposToDelete[name], jo)
 				}
 			}
 		}
 	}
 	for key, value := range reposToDelete {
 		stringslice := make([]string, len(value))
-		for i, num := range value {
-			stringslice[i] = strconv.Itoa(num + 1)
+		for i, jo := range value {
+			stringslice[i] = fmt.Sprintf("%s:%d", jo.SourceFile, jo.SourceLine)
 		}
-		fmt.Printf("Warning: Ignoring repos due to duplicate name. Name: '%s', Indices: %s\n", key, strings.Join(stringslice, ", "))
+		fmt.Printf("Warning: Ignoring %d repos due to duplicate name. Name: '%s', JsonObjects (file:line): %s\n", len(value), key, strings.Join(stringslice, ", "))
 	}
 
 	repoIndicesToDelete := []int{}
 	for _, value := range reposToDelete {
-		repoIndicesToDelete = append(repoIndicesToDelete, value...)
+		for _, jo := range value {
+			repoIndicesToDelete = append(repoIndicesToDelete, jo.Index)
+		}
 	}
 	sort.Ints(repoIndicesToDelete)
 	for i := len(repoIndicesToDelete) - 1; i >= 0; i-- {
-		reposToProvision = slices.Delete(reposToProvision, i, i+1)
+		repos = slices.Delete(repos, i, i+1)
 	}
 
-	return reposToProvision
+	return repos
 }
 
 func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, repofile string) error {
