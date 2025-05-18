@@ -288,8 +288,9 @@ func removeDups(repos []Repo) []Repo {
 		}
 	}
 	sort.Ints(repoIndicesToDelete)
+
 	for i := len(repoIndicesToDelete) - 1; i >= 0; i-- {
-		repos = slices.Delete(repos, i, i+1)
+		repos = slices.Delete(repos, repoIndicesToDelete[i], repoIndicesToDelete[i]+1)
 	}
 
 	return repos
@@ -432,10 +433,15 @@ func provision(
 	dryrun bool) error {
 
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
-	for index, repo := range reposToProvision {
-		err := provisionRepo(repo, allrepos, allusers, allgroups, allpermissiondetails, client, baseurl, token, dryrun)
+	for _, repo := range reposToProvision {
+		err := provisionRepo(repo, allrepos, allusers, allgroups, client, baseurl, token, dryrun)
 		if err != nil {
-			fmt.Printf("Warning: Ignoring repo %d '%s': %v\n", index+1, repo.Name, err)
+			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
+		} else {
+			err = provisionPermissionTarget(repo, allusers, allgroups, allpermissiondetails, client, baseurl, token, dryrun)
+			if err != nil {
+				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
+			}
 		}
 	}
 
@@ -447,7 +453,6 @@ func provisionRepo(
 	allrepos []ArtifactoryRepoResponse,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
-	allpermissiondetails []ArtifactoryPermissionDetails,
 	client *http.Client,
 	baseurl string,
 	token string,
@@ -468,35 +473,35 @@ func provisionRepo(
 	errors := checkUsersAndGroups(repo.Read, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
-			fmt.Printf("Permission read, Repo '%s': %v\n", repo.Name, err)
+			fmt.Printf("'%s': Permission read: %v\n", repo.Name, err)
 		}
 		return fmt.Errorf("")
 	}
 	errors = checkUsersAndGroups(repo.Write, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
-			fmt.Printf("Permission write, Repo '%s': %v\n", repo.Name, err)
+			fmt.Printf("'%s': Permission write: %v\n", repo.Name, err)
 		}
 		return fmt.Errorf("")
 	}
 	errors = checkUsersAndGroups(repo.Annotate, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
-			fmt.Printf("Permission annotate, Repo '%s': %v\n", repo.Name, err)
+			fmt.Printf("'%s': Permission annotate: %v\n", repo.Name, err)
 		}
 		return fmt.Errorf("")
 	}
 	errors = checkUsersAndGroups(repo.Delete, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
-			fmt.Printf("Permission delete, Repo '%s': %v\n", repo.Name, err)
+			fmt.Printf("'%s': Permission delete: %v\n", repo.Name, err)
 		}
 		return fmt.Errorf("")
 	}
 	errors = checkUsersAndGroups(repo.Manage, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
-			fmt.Printf("Permission manage, Repo '%s': %v\n", repo.Name, err)
+			fmt.Printf("'%s': Permission manage: %v\n", repo.Name, err)
 		}
 		return fmt.Errorf("")
 	}
@@ -510,49 +515,80 @@ func provisionRepo(
 	}
 
 	if repoExists {
-		fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
-
-		url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
-
-		// Todo: Fields (not key/name) might be overwritten with new values, if so, print out a diff
-		artifactoryrepo := ArtifactoryRepoRequest{
-			Key:         repo.Name,
-			Description: repo.Description,
-			Rclass:      repo.Rclass,
-			PackageType: repo.PackageType,
+		diff := false
+		for _, r := range allrepos {
+			if r.Key == repo.Name {
+				ignore := false
+				if r.Description != repo.Description {
+					diff = true
+				}
+				if !strings.EqualFold(r.Type, repo.Rclass) {
+					fmt.Printf("'%s': Ignoring repo, cannot update rclass/type: diff: '%s' -> '%s'\n", repo.Name, r.Type, repo.Rclass)
+					ignore = true
+				}
+				if !strings.EqualFold(r.PackageType, repo.PackageType) && !(strings.EqualFold(r.PackageType, "generic") && repo.PackageType == "") {
+					fmt.Printf("'%s': Ignoring repo, cannot update package type: diff: '%s' -> '%s'\n", repo.Name, r.PackageType, repo.PackageType)
+					ignore = true
+				}
+				if ignore {
+					return nil
+				}
+			}
 		}
+		if !diff {
+			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
+		} else {
+			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
+			for _, r := range allrepos {
+				if r.Key == repo.Name {
+					if r.Description != repo.Description {
+						fmt.Printf("'%s': Description diff: '%s' -> '%s'\n", repo.Name, r.Description, repo.Description)
+					}
+				}
+			}
 
-		json, err := json.Marshal(artifactoryrepo)
-		if err != nil {
-			return fmt.Errorf("error updating repo, error generating json: %w", err)
-		}
-		req, err := http.NewRequest("PUT", url, strings.NewReader(string(json)))
-		if err != nil {
-			return fmt.Errorf("error updating repo, error creating request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+token)
-		/*
-			resp, err := client.Do(req)
+			url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
+
+			artifactoryrepo := ArtifactoryRepoRequest{
+				Key:         repo.Name,
+				Description: repo.Description,
+				Rclass:      repo.Rclass,
+				PackageType: repo.PackageType,
+			}
+
+			json, err := json.Marshal(artifactoryrepo)
 			if err != nil {
-				return fmt.Errorf("error updating repo: %w", err)
+				return fmt.Errorf("error updating repo, error generating json: %w", err)
 			}
-			defer resp.Body.Close()
+			req, err := http.NewRequest("POST", url, strings.NewReader(string(json)))
+			if err != nil {
+				return fmt.Errorf("error updating repo, error creating request: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
 
-			if resp.StatusCode != 200 {
-				fmt.Printf("Key: '%s'\n", repo.Name)
-				fmt.Printf("Url: '%s'\n", url)
-				fmt.Printf("Unexpected status: '%s'\n", resp.Status)
-				fmt.Printf("Request body: '%s'\n", req.Body)
-				body, _ := io.ReadAll(resp.Body)
-				fmt.Printf("Response body: '%s'\n", body)
-				return fmt.Errorf("error updating repo")
-			} else {
-				fmt.Printf("Updated repo successfully: '%s'\n", repo.Name)
+			if !dryrun {
+				resp, err := client.Do(req)
+				if err != nil {
+					return fmt.Errorf("error updating repo: %w", err)
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != 200 {
+					fmt.Printf("Key: '%s'\n", repo.Name)
+					fmt.Printf("Url: '%s'\n", url)
+					fmt.Printf("Unexpected status: '%s'\n", resp.Status)
+					fmt.Printf("Request body: '%s'\n", req.Body)
+					body, _ := io.ReadAll(resp.Body)
+					fmt.Printf("Response body: '%s'\n", body)
+					return fmt.Errorf("error updating repo")
+				} else {
+					fmt.Printf("'%s': Updated repo successfully.\n", repo.Name)
+				}
 			}
-		*/
+		}
 	} else {
-		//fmt.Printf("Repo '%s' does not exist, creating...\n", repo.Name)
+		fmt.Printf("'%s': Repo does not exist, creating...\n", repo.Name)
 
 		url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
 		artifactoryrepo := ArtifactoryRepoRequest{
@@ -589,10 +625,23 @@ func provisionRepo(
 				fmt.Printf("Response body: '%s'\n", body)
 				return fmt.Errorf("error creating repo")
 			} else {
-				//fmt.Printf("Created repo successfully: '%s'\n", repo.Name)
+				fmt.Printf("'%s': Created repo successfully.\n", repo.Name)
 			}
 		}
 	}
+
+	return nil
+}
+
+func provisionPermissionTarget(
+	repo Repo,
+	allusers []ArtifactoryUser,
+	allgroups []ArtifactoryGroup,
+	allpermissiondetails []ArtifactoryPermissionDetails,
+	client *http.Client,
+	baseurl,
+	token string,
+	dryrun bool) error {
 
 	permissionTargetExists := false
 	for _, p := range allpermissiondetails {
@@ -603,13 +652,88 @@ func provisionRepo(
 	}
 
 	if permissionTargetExists {
-		//fmt.Printf("Permission target '%s' already exists, updating...\n", repo.Name)
-	} else {
-		//fmt.Printf("Permission target '%s' doesn't exist, creating...\n", repo.Name)
+		users, groups := convertUsersAndGroups(repo, allusers, allgroups)
 
-		url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
+		diff := false
+		for _, pd := range allpermissiondetails {
+			if pd.Name == repo.Name {
+				if !equalStringSliceMaps(pd.Resources.Artifact.Actions.Users, users) {
+					diff = true
+				}
+				if !equalStringSliceMaps(pd.Resources.Artifact.Actions.Groups, groups) {
+					diff = true
+				}
+			}
+		}
+		if !diff {
+			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
+		} else {
+			fmt.Printf("'%s': Permission target already exists, updating...\n", repo.Name)
+			for _, pd := range allpermissiondetails {
+				if pd.Name == repo.Name {
+					if !equalStringSliceMaps(pd.Resources.Artifact.Actions.Users, users) {
+						fmt.Printf("'%s': Users diff: '%s' -> '%s'\n", repo.Name, pd.Resources.Artifact.Actions.Users, users)
+					}
+					if !equalStringSliceMaps(pd.Resources.Artifact.Actions.Groups, groups) {
+						fmt.Printf("'%s': Groups diff: '%s' -> '%s'\n", repo.Name, pd.Resources.Artifact.Actions.Groups, groups)
+					}
+				}
+			}
+
+			url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, repo.Name)
+
+			targets := make(map[string]ArtifactoryPermissionDetailsTargets)
+			targets[repo.Name] = ArtifactoryPermissionDetailsTargets{
+				IncludePatterns: []string{"**"},
+				ExcludePatterns: []string{},
+			}
+
+			artifactorypermissiontarget := ArtifactoryPermissionDetailsArtifact{
+				Actions: ArtifactoryPermissionDetailsActions{
+					Users:  users,
+					Groups: groups,
+				},
+				Targets: targets,
+			}
+
+			json, err := json.Marshal(artifactorypermissiontarget)
+
+			if err != nil {
+				return fmt.Errorf("error updating permission target, error generating json: %w", err)
+			}
+			req, err := http.NewRequest("PUT", url, strings.NewReader(string(json)))
+			if err != nil {
+				return fmt.Errorf("error updating permission target, error updating request: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			if !dryrun {
+				resp, err := client.Do(req)
+				if err != nil {
+					return fmt.Errorf("error updating permission target: %w", err)
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != 200 {
+					fmt.Printf("Key: '%s'\n", repo.Name)
+					fmt.Printf("Url: '%s'\n", url)
+					fmt.Printf("Unexpected status: '%s'\n", resp.Status)
+					fmt.Printf("Request body: '%s'\n", req.Body)
+					body, _ := io.ReadAll(resp.Body)
+					fmt.Printf("Response body: '%s'\n", body)
+					return fmt.Errorf("error updating permission target")
+				} else {
+					fmt.Printf("'%s': Created permission target successfully.\n", repo.Name)
+				}
+			}
+		}
+	} else {
+		fmt.Printf("'%s': Permission target doesn't exist, creating...\n", repo.Name)
 
 		users, groups := convertUsersAndGroups(repo, allusers, allgroups)
+
+		url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 
 		targets := make(map[string]ArtifactoryPermissionDetailsTargets)
 		targets[repo.Name] = ArtifactoryPermissionDetailsTargets{
@@ -631,8 +755,6 @@ func provisionRepo(
 		}
 
 		json, err := json.Marshal(artifactorypermissiontarget)
-
-		//fmt.Printf("json: '%s'\n", string(json))
 
 		if err != nil {
 			return fmt.Errorf("error creating permission target, error generating json: %w", err)
@@ -660,12 +782,30 @@ func provisionRepo(
 				fmt.Printf("Response body: '%s'\n", body)
 				return fmt.Errorf("error creating permission target")
 			} else {
-				//fmt.Printf("Created permission target successfully: '%s'\n", repo.Name)
+				fmt.Printf("'%s': Created permission target successfully.\n", repo.Name)
 			}
 		}
 	}
 
 	return nil
+}
+
+func equalStringSliceMaps(a map[string][]string, b map[string][]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, vA := range a {
+		vB, ok := b[k]
+		if !ok {
+			return false
+		}
+		slices.Sort(vA)
+		slices.Sort(vB)
+		if !slices.Equal(vA, vB) {
+			return false
+		}
+	}
+	return true
 }
 
 func convertUsersAndGroups(repo Repo, allusers []ArtifactoryUser, allgroups []ArtifactoryGroup) (map[string][]string, map[string][]string) {
