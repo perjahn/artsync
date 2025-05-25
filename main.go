@@ -12,6 +12,9 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 )
 
 type ArtifactoryRepoResponse struct {
@@ -96,7 +99,7 @@ type Repo struct {
 	Delete       []string `json:"delete,omitempty"`
 	Manage       []string `json:"manage,omitempty"`
 	SourceFile   string   `json:"-"`
-	SourceOffset int64    `json:"-"`
+	SourceOffset int      `json:"-"`
 	SourceLine   int      `json:"-"`
 }
 
@@ -197,41 +200,75 @@ func loadRepoFiles(repofile []string) ([]Repo, error) {
 		}
 
 		var repos []Repo
+
 		decoder := json.NewDecoder(strings.NewReader(string(data)))
-		err = decoder.Decode(&repos)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing json file: %w", err)
-		}
-
-		decoder = json.NewDecoder(strings.NewReader(string(data)))
-		offsets := []int64{}
-
-		for {
-			t, err := decoder.Token()
-			if err != nil {
-				break
-			}
-			if t == json.Delim('{') {
-				offsets = append(offsets, decoder.InputOffset()-1)
-			}
-		}
-		if len(offsets) != len(repos) {
-			fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of json objects (%d)\n",
-				repofile, len(repos), len(offsets))
-		}
-		for i := range repos {
-			repos[i].SourceFile = repofile
-			repos[i].SourceOffset = offsets[i]
-			line := 1
-			for j := range data {
-				if data[j] == '\n' {
-					line++
+		errjson := decoder.Decode(&repos)
+		if errjson != nil {
+			erryaml := yaml.Unmarshal(data, &repos)
+			if erryaml != nil {
+				return nil, fmt.Errorf("error parsing json/yaml file: %w %w", errjson, erryaml)
+			} else {
+				var node ast.Node
+				if err := yaml.Unmarshal(data, &node); err != nil {
+					return nil, fmt.Errorf("error parsing yaml file: %w", erryaml)
 				}
-				if int(offsets[i]) == j {
+
+				type position struct {
+					offset int
+					line   int
+				}
+				positions := []position{}
+				t := node.GetToken()
+				for {
+					if t.Value == "-" && t.Position.IndentLevel == 0 {
+						positions = append(positions, position{offset: t.Position.Offset, line: t.Position.Line})
+					}
+					t = t.Next
+					if t == nil {
+						break
+					}
+				}
+				if len(positions) != len(repos) {
+					fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of yaml objects (%d)\n",
+						repofile, len(repos), len(positions))
+				}
+				for i := range repos {
+					repos[i].SourceFile = repofile
+					repos[i].SourceOffset = positions[i].offset
+					repos[i].SourceLine = positions[i].line
+				}
+			}
+		} else {
+			decoder = json.NewDecoder(strings.NewReader(string(data)))
+			offsets := []int{}
+
+			for {
+				t, err := decoder.Token()
+				if err != nil {
 					break
 				}
+				if t == json.Delim('{') {
+					offsets = append(offsets, int(decoder.InputOffset()-1))
+				}
 			}
-			repos[i].SourceLine = line
+			if len(offsets) != len(repos) {
+				fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of json objects (%d)\n",
+					repofile, len(repos), len(offsets))
+			}
+			for i := range repos {
+				repos[i].SourceFile = repofile
+				repos[i].SourceOffset = offsets[i]
+				line := 1
+				for j := range data {
+					if data[j] == '\n' {
+						line++
+					}
+					if offsets[i] == j {
+						break
+					}
+				}
+				repos[i].SourceLine = line
+			}
 		}
 
 		allrepos = append(allrepos, repos...)
@@ -279,7 +316,7 @@ func removeDups(repos []Repo) []Repo {
 		for i, jo := range value {
 			stringslice[i] = fmt.Sprintf("%s:%d", jo.SourceFile, jo.SourceLine)
 		}
-		fmt.Printf("Warning: Ignoring %d repos due to duplicate name. Name: '%s', JsonObjects (file:line): %s\n", len(value), key, strings.Join(stringslice, ", "))
+		fmt.Printf("Warning: Ignoring %d repos due to duplicate name. Name: '%s', objects (file:line): %s\n", len(value), key, strings.Join(stringslice, ", "))
 	}
 
 	repoIndicesToDelete := []int{}
