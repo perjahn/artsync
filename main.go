@@ -420,19 +420,19 @@ func generate(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPe
 
 func addPermissionsToRepo(reposToSave []Repo, i int, permissions map[string][]string) {
 	for name, rolePermissions := range permissions {
-		if slices.Contains(rolePermissions, "READ") {
+		if slices.Contains(rolePermissions, "READ") && !slices.Contains(reposToSave[i].Read, name) {
 			reposToSave[i].Read = append(reposToSave[i].Read, name)
 		}
-		if slices.Contains(rolePermissions, "WRITE") {
+		if slices.Contains(rolePermissions, "WRITE") && !slices.Contains(reposToSave[i].Write, name) {
 			reposToSave[i].Write = append(reposToSave[i].Write, name)
 		}
-		if slices.Contains(rolePermissions, "ANNOTATE") {
+		if slices.Contains(rolePermissions, "ANNOTATE") && !slices.Contains(reposToSave[i].Annotate, name) {
 			reposToSave[i].Annotate = append(reposToSave[i].Annotate, name)
 		}
-		if slices.Contains(rolePermissions, "DELETE") {
+		if slices.Contains(rolePermissions, "DELETE") && !slices.Contains(reposToSave[i].Delete, name) {
 			reposToSave[i].Delete = append(reposToSave[i].Delete, name)
 		}
-		if slices.Contains(rolePermissions, "MANAGE") {
+		if slices.Contains(rolePermissions, "MANAGE") && !slices.Contains(reposToSave[i].Manage, name) {
 			reposToSave[i].Manage = append(reposToSave[i].Manage, name)
 		}
 	}
