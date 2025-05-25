@@ -106,13 +106,14 @@ type Repo struct {
 func main() {
 	useAllPermissionTargetsAsSource := flag.Bool("a", false, "Use all permission targets as source, when generating.")
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
-	generate := flag.Bool("g", false, "Generate repo file.")
+	dogenerate := flag.Bool("g", false, "Generate repo file.")
 	overwrite := flag.Bool("o", false, "Allow overwriting of existing repo file.")
+	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
 
 	flag.Parse()
 	args := flag.Args()
 	if len(args) < 3 || args[0] == "" || args[1] == "" || args[2] == "" {
-		fmt.Println("Usage: artsync [-a] [-d] [-g] [-o] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+		fmt.Println("Usage: artsync [-a] [-d] [-g] [-o] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 		fmt.Println()
 		flag.Usage()
 		fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
@@ -125,12 +126,12 @@ func main() {
 	tokenfile := args[1]
 	repofiles := args[2:]
 
-	if *generate && len(repofiles) > 1 {
+	if *dogenerate && len(repofiles) > 1 {
 		fmt.Println("Only one repo file is allowed when using -g flag.")
 		os.Exit(1)
 	}
 
-	if !*generate {
+	if !*dogenerate {
 		success := true
 		for _, repofile := range repofiles {
 			if _, err := os.Stat(repofile); os.IsNotExist(err) {
@@ -143,7 +144,7 @@ func main() {
 		}
 	}
 
-	if *generate && !*overwrite {
+	if *dogenerate && !*overwrite {
 		if _, err := os.Stat(repofiles[0]); err == nil {
 			fmt.Printf("File already exists, will not overwrite: '%s'\n", repofiles[0])
 			os.Exit(1)
@@ -161,7 +162,7 @@ func main() {
 
 	var reposToProvision []Repo
 
-	if !*generate {
+	if !*dogenerate {
 		reposToProvision, err = loadRepoFiles(repofiles)
 		if err != nil {
 			fmt.Printf("Error validating repo file: %v\n", err)
@@ -175,8 +176,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *generate {
-		generete(repos, permissiondetails, *useAllPermissionTargetsAsSource, repofiles[0])
+	if *dogenerate {
+		generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, repofiles[0], *generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -334,7 +335,7 @@ func removeDups(repos []Repo) []Repo {
 	return repos
 }
 
-func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, useAllPermissionTargetsAsSource bool, repofile string) error {
+func generate(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, useAllPermissionTargetsAsSource bool, repofile string, generateyaml bool) error {
 	reposToSave := make([]Repo, len(repos))
 
 	for i, repo := range repos {
@@ -380,20 +381,38 @@ func generete(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPe
 		return reposToSave[i].Name < reposToSave[j].Name
 	})
 
-	json, err := json.MarshalIndent(reposToSave, "", "  ")
-	if err != nil {
-		return fmt.Errorf("error generating json: %w", err)
-	}
+	if generateyaml {
+		data, err := yaml.Marshal(reposToSave)
+		if err != nil {
+			return fmt.Errorf("error generating yaml: %w", err)
+		}
 
-	file, err := os.Create(repofile)
-	if err != nil {
-		return fmt.Errorf("error creating file: %w", err)
-	}
-	defer file.Close()
+		file, err := os.Create(repofile)
+		if err != nil {
+			return fmt.Errorf("error creating file: %w", err)
+		}
+		defer file.Close()
 
-	_, err = file.Write(json)
-	if err != nil {
-		return fmt.Errorf("error saving file: %w", err)
+		_, err = file.Write(data)
+		if err != nil {
+			return fmt.Errorf("error saving file: %w", err)
+		}
+	} else {
+		json, err := json.MarshalIndent(reposToSave, "", "  ")
+		if err != nil {
+			return fmt.Errorf("error generating json: %w", err)
+		}
+
+		file, err := os.Create(repofile)
+		if err != nil {
+			return fmt.Errorf("error creating file: %w", err)
+		}
+		defer file.Close()
+
+		_, err = file.Write(json)
+		if err != nil {
+			return fmt.Errorf("error saving file: %w", err)
+		}
 	}
 
 	return nil
