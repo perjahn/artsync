@@ -33,6 +33,11 @@ func LoadRepoFiles(repofile []string) ([]Repo, error) {
 			if erryaml != nil {
 				return nil, fmt.Errorf("error parsing json/yaml file: %w %w", errjson, erryaml)
 			} else {
+				if len(repos) == 0 {
+					fmt.Printf("Warning: Ignoring empty yaml file: '%s'\n", repofile)
+					continue
+				}
+
 				var node ast.Node
 				if err := yaml.Unmarshal(data, &node); err != nil {
 					return nil, fmt.Errorf("error parsing yaml file: %w", erryaml)
@@ -136,15 +141,23 @@ func removeDups(repos []Repo) []Repo {
 			}
 		}
 	}
-	for key, value := range reposToDelete {
-		stringslice := make([]string, len(value))
-		for i, jo := range value {
-			stringslice[i] = fmt.Sprintf("%s:%d", jo.SourceFile, jo.SourceLine)
+
+	keys := make([]string, 0, len(reposToDelete))
+	for key := range reposToDelete {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		positions := make([]string, len(reposToDelete[key]))
+		for i, jo := range reposToDelete[key] {
+			positions[i] = fmt.Sprintf("%s:%d", jo.SourceFile, jo.SourceLine)
 		}
-		fmt.Printf("Warning: Ignoring %d repos due to duplicate name. Name: '%s', objects (file:line): %s\n", len(value), key, strings.Join(stringslice, ", "))
+		fmt.Printf("Warning: Ignoring %d repos due to duplicate name. Name: '%s', objects (file:line): %s\n", len(reposToDelete[key]), key, strings.Join(positions, ", "))
 	}
 
 	repoIndicesToDelete := []int{}
+	sort.Ints(repoIndicesToDelete)
 	for _, value := range reposToDelete {
 		for _, jo := range value {
 			repoIndicesToDelete = append(repoIndicesToDelete, jo.Index)
