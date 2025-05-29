@@ -1,0 +1,87 @@
+package main
+
+type ArtifactoryRepoResponse struct {
+	Key         string `json:"key"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Url         string `json:"url"`
+	PackageType string `json:"packageType"`
+}
+
+type ArtifactoryRepoRequest struct {
+	Key         string `json:"key,omitempty"`
+	Description string `json:"description,omitempty"`
+	Rclass      string `json:"rclass"`
+	PackageType string `json:"packageType,omitempty"`
+}
+
+type ArtifactoryPermissions struct {
+	Permissions []ArtifactoryPermission `json:"permissions"`
+	Cursor      string                  `json:"cursor"`
+}
+
+type ArtifactoryPermission struct {
+	Name string `json:"name"`
+	Uri  string `json:"uri"`
+}
+
+type ArtifactoryPermissionDetails struct {
+	Name      string                                `json:"name"`
+	Resources ArtifactoryPermissionDetailsResources `json:"resources"`
+}
+
+type ArtifactoryPermissionDetailsResources struct {
+	Artifact ArtifactoryPermissionDetailsArtifact `json:"artifact"`
+}
+
+type ArtifactoryPermissionDetailsArtifact struct {
+	Actions ArtifactoryPermissionDetailsActions            `json:"actions"`
+	Targets map[string]ArtifactoryPermissionDetailsTargets `json:"targets"`
+}
+
+type ArtifactoryPermissionDetailsActions struct {
+	Users  map[string][]string `json:"users"`
+	Groups map[string][]string `json:"groups"`
+}
+
+type ArtifactoryPermissionDetailsTargets struct {
+	IncludePatterns []string `json:"include_patterns"`
+	ExcludePatterns []string `json:"exclude_patterns"`
+}
+
+type ArtifactoryUsers struct {
+	Users  []ArtifactoryUser `json:"users"`
+	Cursor string            `json:"cursor"`
+}
+
+type ArtifactoryUser struct {
+	Username string `json:"username"`
+	Uri      string `json:"uri"`
+	Realm    string `json:"realm"`
+	Status   string `json:"status"`
+}
+
+type ArtifactoryGroups struct {
+	Groups []ArtifactoryGroup `json:"groups"`
+	Cursor string             `json:"cursor"`
+}
+
+type ArtifactoryGroup struct {
+	GroupName string `json:"group_name"`
+	Uri       string `json:"uri"`
+}
+
+type Repo struct {
+	Name         string   `json:"name"`
+	PackageType  string   `json:"packageType,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Rclass       string   `json:"rclass,omitempty"`
+	Read         []string `json:"read,omitempty"`
+	Write        []string `json:"write,omitempty"`
+	Annotate     []string `json:"annotate,omitempty"`
+	Delete       []string `json:"delete,omitempty"`
+	Manage       []string `json:"manage,omitempty"`
+	SourceFile   string   `json:"-"`
+	SourceOffset int      `json:"-"`
+	SourceLine   int      `json:"-"`
+}
