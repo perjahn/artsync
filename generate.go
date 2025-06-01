@@ -10,46 +10,81 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-func Generate(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPermissionDetails, useAllPermissionTargetsAsSource bool, repofile string, generateyaml bool) error {
-	reposToSave := make([]Repo, len(repos))
+func Generate(
+	repos []ArtifactoryRepoResponse,
+	permissiondetails []ArtifactoryPermissionDetails,
+	useAllPermissionTargetsAsSource bool,
+	onlyGenerateMatchingRepos bool,
+	onlyGenerateCleanRepos bool,
+	repofile string,
+	generateyaml bool) error {
 
-	for i, repo := range repos {
-		reposToSave[i] = Repo{
+	var reposToSave []Repo
+
+	for _, repo := range repos {
+		if onlyGenerateMatchingRepos {
+			found := false
+			for _, permission := range permissiondetails {
+				if permission.Name == repo.Key {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		repoToSave := Repo{
 			Name:        repo.Key,
 			Description: repo.Description,
 			Rclass:      repo.Type,
-			PackageType: repo.PackageType,
-		}
+			PackageType: repo.PackageType}
+
 		if repo.Type == "LOCAL" {
-			reposToSave[i].Rclass = ""
+			repoToSave.Rclass = ""
 		}
 		if repo.PackageType == "Generic" {
-			reposToSave[i].PackageType = ""
+			repoToSave.PackageType = ""
 		}
 
+		clean := true
 		if useAllPermissionTargetsAsSource {
 			for _, permission := range permissiondetails {
 				for reponame := range permission.Resources.Artifact.Targets {
 					if reponame == repo.Key {
-						addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Users)
-						addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Groups)
+						if onlyGenerateCleanRepos && !isClean(repo.Key, permission.Name, permission.Resources.Artifact.Targets[repo.Key]) {
+							clean = false
+						}
+
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
 					}
 				}
 			}
 		} else {
 			for _, permission := range permissiondetails {
 				if permission.Name == repo.Key {
-					addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Users)
-					addPermissionsToRepo(reposToSave, i, permission.Resources.Artifact.Actions.Groups)
+					if onlyGenerateCleanRepos && !isClean(repo.Key, permission.Name, permission.Resources.Artifact.Targets[repo.Key]) {
+						clean = false
+					}
+
+					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
+					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
 				}
 			}
 		}
+		if !clean {
+			continue
+		}
 
-		slices.Sort(reposToSave[i].Read)
-		slices.Sort(reposToSave[i].Write)
-		slices.Sort(reposToSave[i].Annotate)
-		slices.Sort(reposToSave[i].Delete)
-		slices.Sort(reposToSave[i].Manage)
+		slices.Sort(repoToSave.Read)
+		slices.Sort(repoToSave.Write)
+		slices.Sort(repoToSave.Annotate)
+		slices.Sort(repoToSave.Delete)
+		slices.Sort(repoToSave.Manage)
+
+		reposToSave = append(reposToSave, repoToSave)
 	}
 
 	sort.Slice(reposToSave, func(i, j int) bool {
@@ -93,22 +128,35 @@ func Generate(repos []ArtifactoryRepoResponse, permissiondetails []ArtifactoryPe
 	return nil
 }
 
-func addPermissionsToRepo(reposToSave []Repo, i int, permissions map[string][]string) {
+func isClean(reponame string, permissiontargetname string, target ArtifactoryPermissionDetailsTarget) bool {
+	include := target.IncludePatterns
+	exclude := target.ExcludePatterns
+
+	if !slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{})) {
+		fmt.Printf("'%s': Ignoring repo due to its permission target having non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d\n",
+			reponame, permissiontargetname, include, exclude, len(exclude))
+		return false
+	}
+
+	return true
+}
+
+func addPermissionsToRepo(repo *Repo, permissions map[string][]string) {
 	for name, rolePermissions := range permissions {
-		if slices.Contains(rolePermissions, "READ") && !slices.Contains(reposToSave[i].Read, name) {
-			reposToSave[i].Read = append(reposToSave[i].Read, name)
+		if slices.Contains(rolePermissions, "READ") && !slices.Contains(repo.Read, name) {
+			repo.Read = append(repo.Read, name)
 		}
-		if slices.Contains(rolePermissions, "WRITE") && !slices.Contains(reposToSave[i].Write, name) {
-			reposToSave[i].Write = append(reposToSave[i].Write, name)
+		if slices.Contains(rolePermissions, "WRITE") && !slices.Contains(repo.Write, name) {
+			repo.Write = append(repo.Write, name)
 		}
-		if slices.Contains(rolePermissions, "ANNOTATE") && !slices.Contains(reposToSave[i].Annotate, name) {
-			reposToSave[i].Annotate = append(reposToSave[i].Annotate, name)
+		if slices.Contains(rolePermissions, "ANNOTATE") && !slices.Contains(repo.Annotate, name) {
+			repo.Annotate = append(repo.Annotate, name)
 		}
-		if slices.Contains(rolePermissions, "DELETE") && !slices.Contains(reposToSave[i].Delete, name) {
-			reposToSave[i].Delete = append(reposToSave[i].Delete, name)
+		if slices.Contains(rolePermissions, "DELETE") && !slices.Contains(repo.Delete, name) {
+			repo.Delete = append(repo.Delete, name)
 		}
-		if slices.Contains(rolePermissions, "MANAGE") && !slices.Contains(reposToSave[i].Manage, name) {
-			reposToSave[i].Manage = append(reposToSave[i].Manage, name)
+		if slices.Contains(rolePermissions, "MANAGE") && !slices.Contains(repo.Manage, name) {
+			repo.Manage = append(repo.Manage, name)
 		}
 	}
 }

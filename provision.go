@@ -422,11 +422,11 @@ func provisionPermissionTarget(
 			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
 		} else {
 			for _, pd := range allpermissiondetails {
-				for targetname, targets := range pd.Resources.Artifact.Targets {
+				for targetname, target := range pd.Resources.Artifact.Targets {
 					if targetname == repo.Name {
-						include := targets.IncludePatterns
-						exclude := targets.ExcludePatterns
-						if !allowpatterns && (!slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{}))) {
+						include := target.IncludePatterns
+						exclude := target.ExcludePatterns
+						if !allowpatterns && (!slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{""}))) {
 							fmt.Printf("'%s': Ignoring permission target due to non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d\n",
 								repo.Name, pd.Name, include, exclude, len(exclude))
 							return nil
@@ -449,8 +449,8 @@ func provisionPermissionTarget(
 
 			url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, repo.Name)
 
-			targets := make(map[string]ArtifactoryPermissionDetailsTargets)
-			targets[repo.Name] = ArtifactoryPermissionDetailsTargets{
+			targets := make(map[string]ArtifactoryPermissionDetailsTarget)
+			targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
 				IncludePatterns: []string{"**"},
 				ExcludePatterns: []string{},
 			}
@@ -491,7 +491,7 @@ func provisionPermissionTarget(
 					fmt.Printf("Response body: '%s'\n", body)
 					return fmt.Errorf("error updating permission target")
 				} else {
-					fmt.Printf("'%s': Created permission target successfully.\n", repo.Name)
+					fmt.Printf("'%s': Updated permission target successfully.\n", repo.Name)
 				}
 			}
 		}
@@ -502,8 +502,8 @@ func provisionPermissionTarget(
 
 		url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 
-		targets := make(map[string]ArtifactoryPermissionDetailsTargets)
-		targets[repo.Name] = ArtifactoryPermissionDetailsTargets{
+		targets := make(map[string]ArtifactoryPermissionDetailsTarget)
+		targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
 			IncludePatterns: []string{"**"},
 			ExcludePatterns: []string{},
 		}

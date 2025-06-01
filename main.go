@@ -13,9 +13,11 @@ func main() {
 	useAllPermissionTargetsAsSource := flag.Bool("a", false, "Use all permission targets as source, when generating.")
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
-	overwrite := flag.Bool("o", false, "Allow overwriting of existing repo file.")
+	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning.")
+	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
 	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
+	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file.")
 
 	flag.Parse()
 	args := flag.Args()
@@ -78,7 +80,7 @@ func main() {
 	}
 
 	if *generate {
-		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, repofiles[0], *generateyaml)
+		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, repofiles[0], *generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -152,7 +154,12 @@ func getRepoFiles(args []string) []string {
 }
 
 func usage() {
-	fmt.Println("Usage: artsync [-a] [-d] [-g] [-o] [-p] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("ARTSYNC - Artifactory Repo Provisioning Tool")
+	fmt.Println()
+	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
+	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
+	fmt.Println()
+	fmt.Println("Usage: artsync [-a] [-d] [-g] [-m] [-p] [-q] [-y] [-w] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

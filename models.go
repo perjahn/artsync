@@ -35,8 +35,8 @@ type ArtifactoryPermissionDetailsResources struct {
 }
 
 type ArtifactoryPermissionDetailsArtifact struct {
-	Actions ArtifactoryPermissionDetailsActions            `json:"actions"`
-	Targets map[string]ArtifactoryPermissionDetailsTargets `json:"targets"`
+	Actions ArtifactoryPermissionDetailsActions           `json:"actions"`
+	Targets map[string]ArtifactoryPermissionDetailsTarget `json:"targets"`
 }
 
 type ArtifactoryPermissionDetailsActions struct {
@@ -44,7 +44,7 @@ type ArtifactoryPermissionDetailsActions struct {
 	Groups map[string][]string `json:"groups"`
 }
 
-type ArtifactoryPermissionDetailsTargets struct {
+type ArtifactoryPermissionDetailsTarget struct {
 	IncludePatterns []string `json:"include_patterns"`
 	ExcludePatterns []string `json:"exclude_patterns"`
 }
