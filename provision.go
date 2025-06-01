@@ -181,6 +181,7 @@ func Provision(
 	client *http.Client,
 	baseurl string,
 	token string,
+	allowpatterns bool,
 	dryrun bool) error {
 
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
@@ -189,7 +190,7 @@ func Provision(
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 		} else {
-			err = provisionPermissionTarget(repo, allusers, allgroups, allpermissiondetails, client, baseurl, token, dryrun)
+			err = provisionPermissionTarget(repo, allusers, allgroups, allpermissiondetails, client, baseurl, token, allowpatterns, dryrun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
 			}
@@ -392,6 +393,7 @@ func provisionPermissionTarget(
 	client *http.Client,
 	baseurl,
 	token string,
+	allowpatterns bool,
 	dryrun bool) error {
 
 	permissionTargetExists := false
@@ -419,6 +421,20 @@ func provisionPermissionTarget(
 		if !diff {
 			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
 		} else {
+			for _, pd := range allpermissiondetails {
+				for targetname, targets := range pd.Resources.Artifact.Targets {
+					if targetname == repo.Name {
+						include := targets.IncludePatterns
+						exclude := targets.ExcludePatterns
+						if !allowpatterns && (!slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{}))) {
+							fmt.Printf("'%s': Ignoring permission target due to non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d\n",
+								repo.Name, pd.Name, include, exclude, len(exclude))
+							return nil
+						}
+					}
+				}
+			}
+
 			fmt.Printf("'%s': Permission target already exists, updating...\n", repo.Name)
 			for _, pd := range allpermissiondetails {
 				if pd.Name == repo.Name {

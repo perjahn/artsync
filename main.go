@@ -14,6 +14,7 @@ func main() {
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
 	overwrite := flag.Bool("o", false, "Allow overwriting of existing repo file.")
+	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning.")
 	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
 
 	flag.Parse()
@@ -83,7 +84,7 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		err = Provision(reposToProvision, repos, users, groups, permissiondetails, client, baseurl, token, *dryRun)
+		err = Provision(reposToProvision, repos, users, groups, permissiondetails, client, baseurl, token, *allowpatterns, *dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
@@ -151,7 +152,7 @@ func getRepoFiles(args []string) []string {
 }
 
 func usage() {
-	fmt.Println("Usage: artsync [-a] [-d] [-g] [-o] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-d] [-g] [-o] [-p] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")
