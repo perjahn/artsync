@@ -8,11 +8,20 @@ type ArtifactoryRepoResponse struct {
 	PackageType string `json:"packageType"`
 }
 
+type ArtifactoryRepoDetailsResponse struct {
+	Key           string `json:"key"`
+	Description   string `json:"description"`
+	Rclass        string `json:"rclass"`
+	PackageType   string `json:"packageType"`
+	RepoLayoutRef string `json:"repoLayoutRef"`
+}
+
 type ArtifactoryRepoRequest struct {
-	Key         string `json:"key,omitempty"`
-	Description string `json:"description,omitempty"`
-	Rclass      string `json:"rclass"`
-	PackageType string `json:"packageType,omitempty"`
+	Key           string `json:"key,omitempty"`
+	Description   string `json:"description,omitempty"`
+	Rclass        string `json:"rclass"`
+	PackageType   string `json:"packageType,omitempty"`
+	RepoLayoutRef string `json:"repoLayoutRef,omitempty"`
 }
 
 type ArtifactoryPermissions struct {
@@ -76,9 +85,10 @@ type Repo struct {
 	PackageType  string   `json:"packageType,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Rclass       string   `json:"rclass,omitempty"`
+	Layout       string   `json:"layout,omitempty"`
 	Read         []string `json:"read,omitempty"`
-	Write        []string `json:"write,omitempty"`
 	Annotate     []string `json:"annotate,omitempty"`
+	Write        []string `json:"write,omitempty"`
 	Delete       []string `json:"delete,omitempty"`
 	Manage       []string `json:"manage,omitempty"`
 	SourceFile   string   `json:"-"`

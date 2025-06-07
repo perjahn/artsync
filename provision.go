@@ -174,7 +174,7 @@ func removeDups(repos []Repo) []Repo {
 
 func Provision(
 	reposToProvision []Repo,
-	allrepos []ArtifactoryRepoResponse,
+	allrepos []ArtifactoryRepoDetailsResponse,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
@@ -202,7 +202,7 @@ func Provision(
 
 func provisionRepo(
 	repo Repo,
-	allrepos []ArtifactoryRepoResponse,
+	allrepos []ArtifactoryRepoDetailsResponse,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	client *http.Client,
@@ -220,6 +220,12 @@ func provisionRepo(
 
 	if repo.Rclass == "" {
 		repo.Rclass = "local"
+	}
+	if repo.PackageType == "" {
+		repo.PackageType = "generic"
+	}
+	if repo.Layout == "" {
+		repo.Layout = "simple-default"
 	}
 
 	errors := checkUsersAndGroups(repo.Read, allusers, allgroups)
@@ -258,15 +264,15 @@ func provisionRepo(
 		return fmt.Errorf("")
 	}
 
-	repoExists := false
+	var existingRepo *ArtifactoryRepoDetailsResponse
 	for _, r := range allrepos {
 		if r.Key == repo.Name {
-			repoExists = true
+			existingRepo = &r
 			break
 		}
 	}
 
-	if repoExists {
+	if existingRepo != nil {
 		diff := false
 		for _, r := range allrepos {
 			if r.Key == repo.Name {
@@ -274,13 +280,16 @@ func provisionRepo(
 				if r.Description != repo.Description {
 					diff = true
 				}
-				if !strings.EqualFold(r.Type, repo.Rclass) {
-					fmt.Printf("'%s': Ignoring repo, cannot update rclass/type: diff: '%s' -> '%s'\n", repo.Name, r.Type, repo.Rclass)
+				if !strings.EqualFold(r.Rclass, repo.Rclass) {
+					fmt.Printf("'%s': Ignoring repo, cannot update rclass/type: diff: '%s' -> '%s'\n", repo.Name, r.Rclass, repo.Rclass)
 					ignore = true
 				}
-				if !strings.EqualFold(r.PackageType, repo.PackageType) && !(strings.EqualFold(r.PackageType, "generic") && repo.PackageType == "") {
+				if !strings.EqualFold(r.PackageType, repo.PackageType) {
 					fmt.Printf("'%s': Ignoring repo, cannot update package type: diff: '%s' -> '%s'\n", repo.Name, r.PackageType, repo.PackageType)
 					ignore = true
+				}
+				if !strings.EqualFold(r.RepoLayoutRef, repo.Layout) {
+					diff = true
 				}
 				if ignore {
 					return nil
@@ -291,21 +300,22 @@ func provisionRepo(
 			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
 		} else {
 			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
-			for _, r := range allrepos {
-				if r.Key == repo.Name {
-					if r.Description != repo.Description {
-						fmt.Printf("'%s': Description diff: '%s' -> '%s'\n", repo.Name, r.Description, repo.Description)
-					}
-				}
+
+			if existingRepo.Description != repo.Description {
+				fmt.Printf("'%s': Description diff: '%s' -> '%s'\n", repo.Name, existingRepo.Description, repo.Description)
+			}
+			if !strings.EqualFold(existingRepo.RepoLayoutRef, repo.Layout) {
+				fmt.Printf("'%s': Layout diff: '%s' -> '%s'\n", repo.Name, existingRepo.RepoLayoutRef, repo.Layout)
 			}
 
 			url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
 
 			artifactoryrepo := ArtifactoryRepoRequest{
-				Key:         repo.Name,
-				Description: repo.Description,
-				Rclass:      repo.Rclass,
-				PackageType: repo.PackageType,
+				Key:           repo.Name,
+				Description:   repo.Description,
+				Rclass:        repo.Rclass,
+				PackageType:   repo.PackageType,
+				RepoLayoutRef: repo.Layout,
 			}
 
 			json, err := json.Marshal(artifactoryrepo)
@@ -344,10 +354,11 @@ func provisionRepo(
 
 		url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
 		artifactoryrepo := ArtifactoryRepoRequest{
-			Key:         repo.Name,
-			Description: repo.Description,
-			Rclass:      repo.Rclass,
-			PackageType: repo.PackageType,
+			Key:           repo.Name,
+			Description:   repo.Description,
+			Rclass:        repo.Rclass,
+			PackageType:   repo.PackageType,
+			RepoLayoutRef: repo.Layout,
 		}
 
 		json, err := json.Marshal(artifactoryrepo)

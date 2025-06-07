@@ -6,12 +6,13 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 )
 
 func Generate(
-	repos []ArtifactoryRepoResponse,
+	repos []ArtifactoryRepoDetailsResponse,
 	permissiondetails []ArtifactoryPermissionDetails,
 	useAllPermissionTargetsAsSource bool,
 	onlyGenerateMatchingRepos bool,
@@ -38,14 +39,19 @@ func Generate(
 		repoToSave := Repo{
 			Name:        repo.Key,
 			Description: repo.Description,
-			Rclass:      repo.Type,
-			PackageType: repo.PackageType}
+			Rclass:      repo.Rclass,
+			PackageType: repo.PackageType,
+			Layout:      repo.RepoLayoutRef,
+		}
 
-		if repo.Type == "LOCAL" {
+		if strings.EqualFold(repo.Rclass, "local") {
 			repoToSave.Rclass = ""
 		}
-		if repo.PackageType == "Generic" {
+		if strings.EqualFold(repo.PackageType, "generic") {
 			repoToSave.PackageType = ""
+		}
+		if strings.EqualFold(repo.RepoLayoutRef, "simple-default") {
+			repoToSave.Layout = ""
 		}
 
 		clean := true
@@ -79,8 +85,8 @@ func Generate(
 		}
 
 		slices.Sort(repoToSave.Read)
-		slices.Sort(repoToSave.Write)
 		slices.Sort(repoToSave.Annotate)
+		slices.Sort(repoToSave.Write)
 		slices.Sort(repoToSave.Delete)
 		slices.Sort(repoToSave.Manage)
 
@@ -146,11 +152,11 @@ func addPermissionsToRepo(repo *Repo, permissions map[string][]string) {
 		if slices.Contains(rolePermissions, "READ") && !slices.Contains(repo.Read, name) {
 			repo.Read = append(repo.Read, name)
 		}
-		if slices.Contains(rolePermissions, "WRITE") && !slices.Contains(repo.Write, name) {
-			repo.Write = append(repo.Write, name)
-		}
 		if slices.Contains(rolePermissions, "ANNOTATE") && !slices.Contains(repo.Annotate, name) {
 			repo.Annotate = append(repo.Annotate, name)
+		}
+		if slices.Contains(rolePermissions, "WRITE") && !slices.Contains(repo.Write, name) {
+			repo.Write = append(repo.Write, name)
 		}
 		if slices.Contains(rolePermissions, "DELETE") && !slices.Contains(repo.Delete, name) {
 			repo.Delete = append(repo.Delete, name)

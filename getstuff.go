@@ -9,13 +9,20 @@ import (
 	"os"
 )
 
-func GetStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryRepoResponse, []ArtifactoryUser, []ArtifactoryGroup, []ArtifactoryPermissionDetails, error) {
+func GetStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryRepoDetailsResponse, []ArtifactoryUser, []ArtifactoryGroup, []ArtifactoryPermissionDetails, error) {
 	repos, err := getRepos(client, baseurl, token)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo count: %d\n", len(repos))
+
+	repodetails, err := getRepoDetails(client, baseurl, token, repos)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	fmt.Printf("Repo details count: %d\n", len(repodetails))
 
 	permissions, err := getPermissions(client, baseurl, token)
 	if err != nil {
@@ -45,7 +52,7 @@ func GetStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryR
 
 	fmt.Printf("Permission details count: %d\n", len(permissiondetails))
 
-	return repos, users, groups, permissiondetails, nil
+	return repodetails, users, groups, permissiondetails, nil
 }
 
 func getUsers(client *http.Client, baseurl string, token string) ([]ArtifactoryUser, error) {
@@ -232,6 +239,70 @@ func getRepos(client *http.Client, baseurl string, token string) ([]ArtifactoryR
 	return repos, nil
 }
 
+func getRepoDetails(client *http.Client, baseurl string, token string, repos []ArtifactoryRepoResponse) ([]ArtifactoryRepoDetailsResponse, error) {
+	var allrepodetails []ArtifactoryRepoDetailsResponse
+
+	fmt.Println("Getting Repo details...")
+
+	for _, repo := range repos {
+		fmt.Print(".")
+
+		url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, url.PathEscape(repo.Key))
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("error creating request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("error sending request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("error reading response body: %w", err)
+		}
+
+		if resp.StatusCode != 200 {
+			fmt.Printf("Url: '%s'\n", url)
+			fmt.Printf("Url2: '%s'\n", repo.Url)
+			fmt.Printf("Unexpected status: '%s'\n", resp.Status)
+			fmt.Printf("Response body: '%s'\n", body)
+		}
+
+		err = os.WriteFile("allrepodetails1.json", []byte(body), 0600)
+		if err != nil {
+			return nil, fmt.Errorf("error saving response body: %w", err)
+		}
+
+		var repodetails ArtifactoryRepoDetailsResponse
+
+		err = json.Unmarshal(body, &repodetails)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing response body: %w", err)
+		}
+
+		allrepodetails = append(allrepodetails, repodetails)
+	}
+
+	fmt.Println()
+
+	json, err := json.MarshalIndent(allrepodetails, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("error generating json: %w", err)
+	}
+
+	err = os.WriteFile("allrepodetails.json", []byte(string(json)), 0600)
+	if err != nil {
+		return nil, fmt.Errorf("error saving repo details: %w", err)
+	}
+
+	return allrepodetails, nil
+}
+
 func getPermissions(client *http.Client, baseurl string, token string) ([]ArtifactoryPermission, error) {
 	var cursor string
 	var allpermissions []ArtifactoryPermission
@@ -306,6 +377,8 @@ func getPermissionsPage(client *http.Client, baseurl string, token string, curso
 
 func getPermissionDetails(client *http.Client, baseurl string, token string, permissions []ArtifactoryPermission) ([]ArtifactoryPermissionDetails, error) {
 	var allpermissiondetails []ArtifactoryPermissionDetails
+
+	fmt.Println("Getting Permissions details...")
 
 	for _, permission := range permissions {
 		fmt.Print(".")
