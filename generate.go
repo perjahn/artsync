@@ -97,38 +97,30 @@ func Generate(
 		return reposToSave[i].Name < reposToSave[j].Name
 	})
 
+	var data []byte
 	if generateyaml {
-		data, err := yaml.Marshal(reposToSave)
+		var err error
+		data, err = yaml.Marshal(reposToSave)
 		if err != nil {
 			return fmt.Errorf("error generating yaml: %w", err)
 		}
-
-		file, err := os.Create(repofile)
-		if err != nil {
-			return fmt.Errorf("error creating file: %w", err)
-		}
-		defer file.Close()
-
-		_, err = file.Write(data)
-		if err != nil {
-			return fmt.Errorf("error saving file: %w", err)
-		}
 	} else {
-		json, err := json.MarshalIndent(reposToSave, "", "  ")
+		var err error
+		data, err = json.MarshalIndent(reposToSave, "", "  ")
 		if err != nil {
 			return fmt.Errorf("error generating json: %w", err)
 		}
+	}
 
-		file, err := os.Create(repofile)
-		if err != nil {
-			return fmt.Errorf("error creating file: %w", err)
-		}
-		defer file.Close()
+	file, err := os.Create(repofile)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
 
-		_, err = file.Write(json)
-		if err != nil {
-			return fmt.Errorf("error saving file: %w", err)
-		}
+	_, err = file.Write(data)
+	if err != nil {
+		return fmt.Errorf("error saving file: %w", err)
 	}
 
 	return nil
