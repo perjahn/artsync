@@ -16,8 +16,8 @@ func main() {
 	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning.")
 	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
+	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
 	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
-	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file.")
 
 	flag.Parse()
 	args := flag.Args()
@@ -32,6 +32,27 @@ func main() {
 
 	if *generate && len(repofiles) > 1 {
 		fmt.Println("Error: Only one repo file is allowed when using -g flag.")
+		os.Exit(1)
+	}
+
+	if !*generate && *useAllPermissionTargetsAsSource {
+		fmt.Println("Error: -a flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *onlyGenerateMatchingRepos {
+		fmt.Println("Error: -m flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *onlyGenerateCleanRepos {
+		fmt.Println("Error: -q flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *overwrite {
+		fmt.Println("Error: -w flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *generateyaml {
+		fmt.Println("Error: -y flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 
@@ -145,7 +166,7 @@ func getRepoFiles(args []string) []string {
 	}
 	for _, repofile := range repofiles {
 		if repofile == "" {
-			fmt.Println("Error: Repo file empty.")
+			fmt.Println("Error: Repo file name empty.")
 			os.Exit(1)
 		}
 	}
@@ -159,7 +180,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-d] [-g] [-m] [-p] [-q] [-y] [-w] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-d] [-g] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

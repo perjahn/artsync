@@ -15,90 +15,20 @@ import (
 	"github.com/goccy/go-yaml/ast"
 )
 
+var ignoredInvalidRepoFilesCount int
+var ignoredDuplicated_RepoCount int
+var ignoredInvalidRepoCount int
+var ignoredNoDiffRepoCount int
+var ignoredInvalidPermissionCount int
+var ignoredNoDiffPermissionCount int
+
 func LoadRepoFiles(repofile []string) ([]Repo, error) {
 	var allrepos []Repo
 
 	for _, repofile := range repofile {
-		data, err := os.ReadFile(repofile)
+		repos, err := loadRepoFile(repofile)
 		if err != nil {
-			return nil, fmt.Errorf("error reading file: %w", err)
-		}
-
-		var repos []Repo
-
-		decoder := json.NewDecoder(strings.NewReader(string(data)))
-		errjson := decoder.Decode(&repos)
-		if errjson != nil {
-			erryaml := yaml.Unmarshal(data, &repos)
-			if erryaml != nil {
-				return nil, fmt.Errorf("error parsing json/yaml file: %w %w", errjson, erryaml)
-			} else {
-				if len(repos) == 0 {
-					fmt.Printf("Warning: Ignoring empty yaml file: '%s'\n", repofile)
-					continue
-				}
-
-				var node ast.Node
-				if err := yaml.Unmarshal(data, &node); err != nil {
-					return nil, fmt.Errorf("error parsing yaml file: %w", erryaml)
-				}
-
-				type position struct {
-					offset int
-					line   int
-				}
-				positions := []position{}
-				t := node.GetToken()
-				for {
-					if t.Value == "-" && t.Position.IndentLevel == 0 {
-						positions = append(positions, position{offset: t.Position.Offset, line: t.Position.Line})
-					}
-					t = t.Next
-					if t == nil {
-						break
-					}
-				}
-				if len(positions) != len(repos) {
-					fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of yaml objects (%d)\n",
-						repofile, len(repos), len(positions))
-				}
-				for i := range repos {
-					repos[i].SourceFile = repofile
-					repos[i].SourceOffset = positions[i].offset
-					repos[i].SourceLine = positions[i].line
-				}
-			}
-		} else {
-			decoder = json.NewDecoder(strings.NewReader(string(data)))
-			offsets := []int{}
-
-			for {
-				t, err := decoder.Token()
-				if err != nil {
-					break
-				}
-				if t == json.Delim('{') {
-					offsets = append(offsets, int(decoder.InputOffset()-1))
-				}
-			}
-			if len(offsets) != len(repos) {
-				fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of json objects (%d)\n",
-					repofile, len(repos), len(offsets))
-			}
-			for i := range repos {
-				repos[i].SourceFile = repofile
-				repos[i].SourceOffset = offsets[i]
-				line := 1
-				for j := range data {
-					if data[j] == '\n' {
-						line++
-					}
-					if offsets[i] == j {
-						break
-					}
-				}
-				repos[i].SourceLine = line
-			}
+			return nil, err
 		}
 
 		allrepos = append(allrepos, repos...)
@@ -107,6 +37,101 @@ func LoadRepoFiles(repofile []string) ([]Repo, error) {
 	allrepos = removeDups(allrepos)
 
 	return allrepos, nil
+}
+
+func loadRepoFile(repofile string) ([]Repo, error) {
+	data, err := os.ReadFile(repofile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading file: %w", err)
+	}
+
+	var repos []Repo
+
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	errjson := decoder.Decode(&repos)
+	if errjson != nil {
+		erryaml := yaml.Unmarshal(data, &repos)
+		if erryaml != nil {
+			return nil, fmt.Errorf("error parsing json/yaml file: %w %w", errjson, erryaml)
+		} else {
+			if len(repos) == 0 {
+				fmt.Printf("Warning: Ignoring empty yaml file: '%s'\n", repofile)
+				ignoredInvalidRepoFilesCount++
+				return repos, nil
+			}
+
+			var node ast.Node
+			if err := yaml.Unmarshal(data, &node); err != nil {
+				return nil, fmt.Errorf("error parsing yaml file: %w", erryaml)
+			}
+
+			type position struct {
+				offset int
+				line   int
+			}
+			positions := []position{}
+			t := node.GetToken()
+			for {
+				if t.Value == "-" && t.Position.IndentLevel == 0 {
+					positions = append(positions, position{offset: t.Position.Offset, line: t.Position.Line})
+				}
+				t = t.Next
+				if t == nil {
+					break
+				}
+			}
+			if len(positions) != len(repos) {
+				fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of yaml objects (%d)\n",
+					repofile, len(repos), len(positions))
+				ignoredInvalidRepoFilesCount++
+			}
+			for i := range repos {
+				repos[i].SourceFile = repofile
+				repos[i].SourceOffset = positions[i].offset
+				repos[i].SourceLine = positions[i].line
+			}
+		}
+	} else {
+		if len(repos) == 0 {
+			fmt.Printf("Warning: Ignoring empty json file: '%s'\n", repofile)
+			ignoredInvalidRepoFilesCount++
+			return repos, nil
+		}
+
+		decoder = json.NewDecoder(strings.NewReader(string(data)))
+		offsets := []int{}
+
+		for {
+			t, err := decoder.Token()
+			if err != nil {
+				break
+			}
+			if t == json.Delim('{') {
+				offsets = append(offsets, int(decoder.InputOffset()-1))
+			}
+		}
+		if len(offsets) != len(repos) {
+			fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of json objects (%d)\n",
+				repofile, len(repos), len(offsets))
+			ignoredInvalidRepoFilesCount++
+		}
+		for i := range repos {
+			repos[i].SourceFile = repofile
+			repos[i].SourceOffset = offsets[i]
+			line := 1
+			for j := range data {
+				if data[j] == '\n' {
+					line++
+				}
+				if offsets[i] == j {
+					break
+				}
+			}
+			repos[i].SourceLine = line
+		}
+	}
+
+	return repos, nil
 }
 
 func removeDups(repos []Repo) []Repo {
@@ -165,6 +190,8 @@ func removeDups(repos []Repo) []Repo {
 	}
 	sort.Ints(repoIndicesToDelete)
 
+	ignoredDuplicated_RepoCount = len(repoIndicesToDelete)
+
 	for i := len(repoIndicesToDelete) - 1; i >= 0; i-- {
 		repos = slices.Delete(repos, repoIndicesToDelete[i], repoIndicesToDelete[i]+1)
 	}
@@ -189,13 +216,22 @@ func Provision(
 		err := provisionRepo(repo, allrepos, allusers, allgroups, client, baseurl, token, dryrun)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
+			ignoredInvalidRepoCount++
 		} else {
 			err = provisionPermissionTarget(repo, allusers, allgroups, allpermissiondetails, client, baseurl, token, allowpatterns, dryrun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
+				ignoredInvalidPermissionCount++
 			}
 		}
 	}
+
+	fmt.Printf("Ignored invalid repo files: %d\n", ignoredInvalidRepoFilesCount)
+	fmt.Printf("Ignored duplicated repos: %d\n", ignoredDuplicated_RepoCount)
+	fmt.Printf("Ignored invalid repos: %d\n", ignoredInvalidRepoCount)
+	fmt.Printf("Ignored no diff repos: %d\n", ignoredNoDiffRepoCount)
+	fmt.Printf("Ignored invalid permission targets: %d\n", ignoredInvalidPermissionCount)
+	fmt.Printf("Ignored no diff permission targets: %d\n", ignoredNoDiffPermissionCount)
 
 	return nil
 }
@@ -235,17 +271,17 @@ func provisionRepo(
 		}
 		return fmt.Errorf("")
 	}
-	errors = checkUsersAndGroups(repo.Write, allusers, allgroups)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			fmt.Printf("'%s': Permission write: %v\n", repo.Name, err)
-		}
-		return fmt.Errorf("")
-	}
 	errors = checkUsersAndGroups(repo.Annotate, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Printf("'%s': Permission annotate: %v\n", repo.Name, err)
+		}
+		return fmt.Errorf("")
+	}
+	errors = checkUsersAndGroups(repo.Write, allusers, allgroups)
+	if len(errors) > 0 {
+		for _, err := range errors {
+			fmt.Printf("'%s': Permission write: %v\n", repo.Name, err)
 		}
 		return fmt.Errorf("")
 	}
@@ -292,12 +328,13 @@ func provisionRepo(
 					diff = true
 				}
 				if ignore {
-					return nil
+					return fmt.Errorf("")
 				}
 			}
 		}
 		if !diff {
 			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
+			ignoredNoDiffRepoCount++
 		} else {
 			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
 
@@ -431,6 +468,7 @@ func provisionPermissionTarget(
 		}
 		if !diff {
 			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
+			ignoredNoDiffPermissionCount++
 		} else {
 			for _, pd := range allpermissiondetails {
 				for targetname, target := range pd.Resources.Artifact.Targets {
@@ -438,9 +476,8 @@ func provisionPermissionTarget(
 						include := target.IncludePatterns
 						exclude := target.ExcludePatterns
 						if !allowpatterns && (!slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{""}))) {
-							fmt.Printf("'%s': Ignoring permission target due to non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d\n",
+							return fmt.Errorf("'%s': Ignoring permission target due to existing non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d",
 								repo.Name, pd.Name, include, exclude, len(exclude))
-							return nil
 						}
 					}
 				}
@@ -656,8 +693,8 @@ func convertUsersAndGroups(repo Repo, allusers []ArtifactoryUser, allgroups []Ar
 	groups := make(map[string][]string)
 
 	getUsersAndGroupsPermission(repo.Read, "READ", users, groups, alluserstrings)
-	getUsersAndGroupsPermission(repo.Write, "WRITE", users, groups, alluserstrings)
 	getUsersAndGroupsPermission(repo.Annotate, "ANNOTATE", users, groups, alluserstrings)
+	getUsersAndGroupsPermission(repo.Write, "WRITE", users, groups, alluserstrings)
 	getUsersAndGroupsPermission(repo.Delete, "DELETE", users, groups, alluserstrings)
 	getUsersAndGroupsPermission(repo.Manage, "MANAGE", users, groups, alluserstrings)
 
