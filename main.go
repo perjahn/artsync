@@ -11,6 +11,7 @@ import (
 
 func main() {
 	useAllPermissionTargetsAsSource := flag.Bool("a", false, "Use all permission targets as source, when generating.")
+	combineRepos := flag.Bool("c", false, "Combine identical repos, when generating.")
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
 	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
@@ -37,6 +38,10 @@ func main() {
 
 	if !*generate && *useAllPermissionTargetsAsSource {
 		fmt.Println("Error: -a flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *combineRepos {
+		fmt.Println("Error: -c flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 	if !*generate && *onlyGenerateMatchingRepos {
@@ -87,11 +92,11 @@ func main() {
 			fmt.Printf("Error validating repo file: %v\n", err)
 			os.Exit(1)
 		}
-	}
 
-	if len(reposToProvision) == 0 && !*generate {
-		fmt.Println("Error: No repos to provision found in the provided repo files.")
-		os.Exit(1)
+		if len(reposToProvision) == 0 {
+			fmt.Println("Error: No repos to provision found in the provided repo files.")
+			os.Exit(1)
+		}
 	}
 
 	repos, users, groups, permissiondetails, err := GetStuff(client, baseurl, token)
@@ -101,7 +106,7 @@ func main() {
 	}
 
 	if *generate {
-		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, repofiles[0], *generateyaml)
+		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, repofiles[0], *generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -180,7 +185,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-d] [-g] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

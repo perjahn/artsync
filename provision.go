@@ -131,7 +131,38 @@ func loadRepoFile(repofile string) ([]Repo, error) {
 		}
 	}
 
+	repos = expandRepos(repos)
+
 	return repos, nil
+}
+
+func expandRepos(repos []Repo) []Repo {
+	var expandedRepos []Repo
+
+	for i := range repos {
+		if repos[i].Name == "" && len(repos[i].Names) == 0 {
+			fmt.Printf("Ignoring repo: Repo must have either a name or names\n")
+			continue
+		}
+		if repos[i].Name != "" && len(repos[i].Names) > 0 {
+			fmt.Printf("Ignoring repo: Repo must not have both a name (%s) and names (%s)\n", repos[i].Name, strings.Join(repos[i].Names, ", "))
+			continue
+		}
+
+		if repos[i].Name != "" {
+			expandedRepos = append(expandedRepos, repos[i])
+		} else {
+			names := repos[i].Names
+			repos[i].Names = []string{}
+			for _, name := range names {
+				fmt.Printf("Expanding: '%s' -> '%s'\n", strings.Join(names, "', '"), name)
+				repos[i].Name = name
+				expandedRepos = append(expandedRepos, repos[i])
+			}
+		}
+	}
+
+	return expandedRepos
 }
 
 func removeDups(repos []Repo) []Repo {
