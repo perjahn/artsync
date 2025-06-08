@@ -378,7 +378,7 @@ func getPermissionsPage(client *http.Client, baseurl string, token string, curso
 func getPermissionDetails(client *http.Client, baseurl string, token string, permissions []ArtifactoryPermission) ([]ArtifactoryPermissionDetails, error) {
 	var allpermissiondetails []ArtifactoryPermissionDetails
 
-	fmt.Println("Getting Permissions details...")
+	fmt.Println("Getting Permission details...")
 
 	for _, permission := range permissions {
 		fmt.Print(".")
