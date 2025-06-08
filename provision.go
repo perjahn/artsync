@@ -529,10 +529,7 @@ func provisionPermissionTarget(
 			url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, repo.Name)
 
 			targets := make(map[string]ArtifactoryPermissionDetailsTarget)
-			targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
-				IncludePatterns: []string{"**"},
-				ExcludePatterns: []string{},
-			}
+			targets[repo.Name] = ArtifactoryPermissionDetailsTarget{}
 
 			artifactorypermissiontarget := ArtifactoryPermissionDetailsArtifact{
 				Actions: ArtifactoryPermissionDetailsActions{

@@ -123,6 +123,15 @@ func Generate(
 	}
 
 	sort.Slice(reposToSave, func(i, j int) bool {
+		if reposToSave[i].Name == "" && reposToSave[j].Name == "" {
+			return reposToSave[i].Names[0] < reposToSave[j].Names[0]
+		}
+		if reposToSave[i].Name == "" {
+			return true
+		}
+		if reposToSave[j].Name == "" {
+			return false
+		}
 		return reposToSave[i].Name < reposToSave[j].Name
 	})
 
