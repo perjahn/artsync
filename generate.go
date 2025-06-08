@@ -17,6 +17,7 @@ func Generate(
 	useAllPermissionTargetsAsSource bool,
 	onlyGenerateMatchingRepos bool,
 	onlyGenerateCleanRepos bool,
+	combineRepos bool,
 	repofile string,
 	generateyaml bool) error {
 
@@ -90,6 +91,34 @@ func Generate(
 		slices.Sort(repoToSave.Delete)
 		slices.Sort(repoToSave.Manage)
 
+		if combineRepos {
+			found := false
+			for i := range reposToSave {
+				if reposToSave[i].PackageType == repoToSave.PackageType &&
+					reposToSave[i].Description == repoToSave.Description &&
+					reposToSave[i].Rclass == repoToSave.Rclass &&
+					reposToSave[i].Layout == repoToSave.Layout &&
+					equalStringSlices(reposToSave[i].Read, repoToSave.Read) &&
+					equalStringSlices(reposToSave[i].Annotate, repoToSave.Annotate) &&
+					equalStringSlices(reposToSave[i].Write, repoToSave.Write) &&
+					equalStringSlices(reposToSave[i].Delete, repoToSave.Delete) &&
+					equalStringSlices(reposToSave[i].Manage, repoToSave.Manage) {
+					found = true
+					if reposToSave[i].Name != "" {
+						reposToSave[i].Names = append(reposToSave[i].Names, reposToSave[i].Name, repoToSave.Name)
+						reposToSave[i].Name = ""
+					} else {
+						reposToSave[i].Names = append(reposToSave[i].Names, repoToSave.Name)
+					}
+					fmt.Printf("'%s': Repo already exists in the list (%s), skipping duplicate\n", repo.Key, reposToSave[i].Names[0])
+					break
+				}
+			}
+			if found {
+				continue
+			}
+		}
+
 		reposToSave = append(reposToSave, repoToSave)
 	}
 
@@ -124,6 +153,22 @@ func Generate(
 	}
 
 	return nil
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aCopy := slices.Clone(a)
+	bCopy := slices.Clone(b)
+	slices.Sort(aCopy)
+	slices.Sort(bCopy)
+	for i := range aCopy {
+		if aCopy[i] != bCopy[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func isClean(reponame string, permissiontargetname string, target ArtifactoryPermissionDetailsTarget) bool {
