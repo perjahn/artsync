@@ -83,9 +83,9 @@ type ArtifactoryGroup struct {
 type Repo struct {
 	Name         string   `json:"name,omitempty"`
 	Names        []string `json:"names,omitempty"`
-	PackageType  string   `json:"packageType,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Rclass       string   `json:"rclass,omitempty"`
+	PackageType  string   `json:"packageType,omitempty"`
 	Layout       string   `json:"layout,omitempty"`
 	Read         []string `json:"read,omitempty"`
 	Annotate     []string `json:"annotate,omitempty"`

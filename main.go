@@ -151,7 +151,7 @@ func getToken(arg string) string {
 			fmt.Printf("Error reading token file: %v\n", err)
 			os.Exit(1)
 		}
-		token = strings.TrimRight(string(data), " \t\r\n")
+		token = string(data)
 	}
 	if token == "" {
 		fmt.Println("Error: Token is empty.")

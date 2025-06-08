@@ -110,7 +110,7 @@ func Generate(
 					} else {
 						reposToSave[i].Names = append(reposToSave[i].Names, repoToSave.Name)
 					}
-					fmt.Printf("'%s': Repo already exists in the list (%s), skipping duplicate\n", repo.Key, reposToSave[i].Names[0])
+					fmt.Printf("'%s': Identical repo already generated (%s), compacting duplicate.\n", repo.Key, reposToSave[i].Names[0])
 					break
 				}
 			}
@@ -184,7 +184,7 @@ func isClean(reponame string, permissiontargetname string, target ArtifactoryPer
 	include := target.IncludePatterns
 	exclude := target.ExcludePatterns
 
-	if !slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{})) {
+	if !slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{""})) {
 		fmt.Printf("'%s': Ignoring repo due to its permission target having non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d\n",
 			reponame, permissiontargetname, include, exclude, len(exclude))
 		return false
