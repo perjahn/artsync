@@ -548,7 +548,7 @@ func provisionPermissionTarget(
 			updateExistingPermission(repo, users, groups, existingPermission, client, baseurl, token, dryRun)
 		}
 	} else {
-		fmt.Printf("'%s': Permission target doesn't exist, creating...\n", repo.Name)
+		fmt.Printf("'%s': Permission target does not exist, creating...\n", repo.Name)
 
 		createNewPermission(repo, users, groups, client, baseurl, token, dryRun)
 	}
@@ -628,6 +628,9 @@ func createNewPermission(
 	client *http.Client,
 	baseurl, token string,
 	dryRun bool) error {
+
+	printDiff(repo, map[string][]string{}, users, "Users")
+	printDiff(repo, map[string][]string{}, groups, "Groups")
 
 	url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 

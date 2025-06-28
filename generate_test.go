@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -185,13 +186,20 @@ func TestAddPermissionsToRepo(t *testing.T) {
 		"user2": {"READ", "ANNOTATE"},
 	}
 	addPermissionsToRepo(repo, perms)
+	addPermissionsToRepo(repo, perms)
 	if len(repo.Read) != 2 || repo.Read[0] != "user1" || repo.Read[1] != "user2" {
-		t.Errorf("addPermissionsToRepo (1/1): failed to add user1 and/or user2 to READ")
-	}
-	if len(repo.Write) != 1 || repo.Write[0] != "user1" {
-		t.Errorf("addPermissionsToRepo (1/1): failed to add user1 to WRITE")
+		t.Errorf("addPermissionsToRepo (1/1): failed to add user1 and/or user2 to READ: (%d) '%s'", len(repo.Read), strings.Join(repo.Read, "', '"))
 	}
 	if len(repo.Annotate) != 1 || repo.Annotate[0] != "user2" {
-		t.Errorf("addPermissionsToRepo (1/1): failed to add user2 to ANNOTATE")
+		t.Errorf("addPermissionsToRepo (1/1): failed to add user2 to ANNOTATE: (%d) '%s'", len(repo.Annotate), strings.Join(repo.Annotate, "', '"))
+	}
+	if len(repo.Write) != 1 || repo.Write[0] != "user1" {
+		t.Errorf("addPermissionsToRepo (1/1): failed to add user1 to WRITE: (%d) '%s'", len(repo.Write), strings.Join(repo.Write, "', '"))
+	}
+	if len(repo.Delete) != 0 {
+		t.Errorf("addPermissionsToRepo (1/1): failed to not add any user to DELETE: (%d) '%s'", len(repo.Delete), strings.Join(repo.Delete, "', '"))
+	}
+	if len(repo.Manage) != 0 {
+		t.Errorf("addPermissionsToRepo (1/1): failed to not add any user to MANAGE: (%d) '%s'", len(repo.Manage), strings.Join(repo.Manage, "', '"))
 	}
 }
