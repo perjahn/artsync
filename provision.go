@@ -240,7 +240,7 @@ func Provision(
 	baseurl string,
 	token string,
 	allowpatterns bool,
-	dryrun bool) error {
+	dryRun bool) error {
 
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
 	for _, repo := range reposToProvision {
@@ -249,12 +249,12 @@ func Provision(
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 			ignoredInvalidRepoCount++
 		} else {
-			err := provisionRepo(repo, allrepos, client, baseurl, token, dryrun)
+			err := provisionRepo(repo, allrepos, client, baseurl, token, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 				ignoredInvalidRepoCount++
 			} else {
-				err = provisionPermissionTarget(repo, allusers, allpermissiondetails, client, baseurl, token, allowpatterns, dryrun)
+				err = provisionPermissionTarget(repo, allusers, allpermissiondetails, client, baseurl, token, allowpatterns, dryRun)
 				if err != nil {
 					fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
 					ignoredInvalidPermissionCount++
@@ -287,35 +287,35 @@ func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []Artifactory
 		for _, err := range errors {
 			fmt.Printf("'%s': Permission read: %v\n", repo.Name, err)
 		}
-		return fmt.Errorf("see above errors above for details")
+		return fmt.Errorf("see errors above for details")
 	}
 	errors = checkUsersAndGroups(repo.Annotate, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Printf("'%s': Permission annotate: %v\n", repo.Name, err)
 		}
-		return fmt.Errorf("see above errors above for details")
+		return fmt.Errorf("see errors above for details")
 	}
 	errors = checkUsersAndGroups(repo.Write, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Printf("'%s': Permission write: %v\n", repo.Name, err)
 		}
-		return fmt.Errorf("see above errors above for details")
+		return fmt.Errorf("see errors above for details")
 	}
 	errors = checkUsersAndGroups(repo.Delete, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Printf("'%s': Permission delete: %v\n", repo.Name, err)
 		}
-		return fmt.Errorf("see above errors above for details")
+		return fmt.Errorf("see errors above for details")
 	}
 	errors = checkUsersAndGroups(repo.Manage, allusers, allgroups)
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Printf("'%s': Permission manage: %v\n", repo.Name, err)
 		}
-		return fmt.Errorf("see above errors above for details")
+		return fmt.Errorf("see errors above for details")
 	}
 
 	return nil
@@ -327,7 +327,7 @@ func provisionRepo(
 	client *http.Client,
 	baseurl string,
 	token string,
-	dryrun bool) error {
+	dryRun bool) error {
 
 	if repo.Rclass == "" {
 		repo.Rclass = "local"
@@ -365,7 +365,7 @@ func provisionRepo(
 			diff = true
 		}
 		if ignore {
-			return fmt.Errorf("see above errors above for details")
+			return fmt.Errorf("see errors above for details")
 		}
 		if !diff {
 			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
@@ -373,7 +373,7 @@ func provisionRepo(
 		} else {
 			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
 
-			err := updateExistingRepo(repo, existingRepo, client, baseurl, token, dryrun)
+			err := updateExistingRepo(repo, existingRepo, client, baseurl, token, dryRun)
 			if err != nil {
 				return err
 			}
@@ -381,7 +381,7 @@ func provisionRepo(
 	} else {
 		fmt.Printf("'%s': Repo does not exist, creating...\n", repo.Name)
 
-		err := createNewRepo(repo, client, baseurl, token, dryrun)
+		err := createNewRepo(repo, client, baseurl, token, dryRun)
 		if err != nil {
 			return err
 		}
@@ -396,7 +396,7 @@ func updateExistingRepo(
 	client *http.Client,
 	baseurl string,
 	token string,
-	dryrun bool,
+	dryRun bool,
 ) error {
 
 	if existingRepo.Description != repo.Description {
@@ -427,7 +427,7 @@ func updateExistingRepo(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	if !dryrun {
+	if !dryRun {
 		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("error updating repo: %w", err)
@@ -455,7 +455,7 @@ func createNewRepo(
 	client *http.Client,
 	baseurl string,
 	token string,
-	dryrun bool,
+	dryRun bool,
 ) error {
 
 	url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
@@ -479,7 +479,7 @@ func createNewRepo(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	if !dryrun {
+	if !dryRun {
 		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("error creating repo: %w", err)
@@ -510,7 +510,7 @@ func provisionPermissionTarget(
 	baseurl,
 	token string,
 	allowpatterns bool,
-	dryrun bool) error {
+	dryRun bool) error {
 
 	var existingPermission *ArtifactoryPermissionDetails
 	for _, p := range allpermissiondetails {
@@ -545,12 +545,12 @@ func provisionPermissionTarget(
 
 			fmt.Printf("'%s': Permission target already exists, updating...\n", repo.Name)
 
-			updateExistingPermission(repo, users, groups, existingPermission, client, baseurl, token, dryrun)
+			updateExistingPermission(repo, users, groups, existingPermission, client, baseurl, token, dryRun)
 		}
 	} else {
 		fmt.Printf("'%s': Permission target doesn't exist, creating...\n", repo.Name)
 
-		createNewPermission(repo, users, groups, client, baseurl, token, dryrun)
+		createNewPermission(repo, users, groups, client, baseurl, token, dryRun)
 	}
 
 	return nil
@@ -564,7 +564,7 @@ func updateExistingPermission(
 	client *http.Client,
 	baseurl,
 	token string,
-	dryrun bool) error {
+	dryRun bool) error {
 
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Users, users) {
 		printDiff(repo, existingPermission.Resources.Artifact.Actions.Users, users, "Users")
@@ -598,7 +598,7 @@ func updateExistingPermission(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	if !dryrun {
+	if !dryRun {
 		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("error updating permission target: %w", err)
@@ -627,7 +627,7 @@ func createNewPermission(
 	groups map[string][]string,
 	client *http.Client,
 	baseurl, token string,
-	dryrun bool) error {
+	dryRun bool) error {
 
 	url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 
@@ -662,7 +662,7 @@ func createNewPermission(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	if !dryrun {
+	if !dryRun {
 		resp, err := client.Do(req)
 		if err != nil {
 			return fmt.Errorf("error creating permission target: %w", err)
