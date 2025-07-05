@@ -46,7 +46,7 @@ func TestProvision(t *testing.T) {
 					Rclass:      "",
 					PackageType: "",
 					Layout:      "maven-2-default",
-					Read:        []string{"test-user"},
+					Read:        []string{"test-user", "test-user"},
 					Write:       []string{"test-user"},
 					Manage:      []string{"test-user"},
 				},
