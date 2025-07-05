@@ -21,6 +21,7 @@ var ignoredInvalidRepoCount int
 var ignoredNoDiffRepoCount int
 var ignoredInvalidPermissionCount int
 var ignoredNoDiffPermissionCount int
+var ignoredDuplicatePermissionCount int
 
 func LoadRepoFiles(repofile []string) ([]Repo, error) {
 	var allrepos []Repo
@@ -269,6 +270,7 @@ func Provision(
 	fmt.Printf("Ignored no diff repos: %d\n", ignoredNoDiffRepoCount)
 	fmt.Printf("Ignored invalid permission targets: %d\n", ignoredInvalidPermissionCount)
 	fmt.Printf("Ignored no diff permission targets: %d\n", ignoredNoDiffPermissionCount)
+	fmt.Printf("Ignored duplicate permissions: %d\n", ignoredDuplicatePermissionCount)
 
 	return nil
 }
@@ -775,11 +777,11 @@ func convertUsersAndGroups(
 	users := make(map[string][]string)
 	groups := make(map[string][]string)
 
-	getUsersAndGroupsPermission(repo.Read, "READ", users, groups, alluserstrings)
-	getUsersAndGroupsPermission(repo.Annotate, "ANNOTATE", users, groups, alluserstrings)
-	getUsersAndGroupsPermission(repo.Write, "WRITE", users, groups, alluserstrings)
-	getUsersAndGroupsPermission(repo.Delete, "DELETE", users, groups, alluserstrings)
-	getUsersAndGroupsPermission(repo.Manage, "MANAGE", users, groups, alluserstrings)
+	getUsersAndGroupsPermission(repo.Read, "READ", users, groups, alluserstrings, repo.Name)
+	getUsersAndGroupsPermission(repo.Annotate, "ANNOTATE", users, groups, alluserstrings, repo.Name)
+	getUsersAndGroupsPermission(repo.Write, "WRITE", users, groups, alluserstrings, repo.Name)
+	getUsersAndGroupsPermission(repo.Delete, "DELETE", users, groups, alluserstrings, repo.Name)
+	getUsersAndGroupsPermission(repo.Manage, "MANAGE", users, groups, alluserstrings, repo.Name)
 
 	if existingPermission != nil {
 		addUnknownPermissions(users, (*existingPermission).Resources.Artifact.Actions.Users, repo.Name, "user")
@@ -811,18 +813,29 @@ func getUsersAndGroupsPermission(
 	permission string,
 	users map[string][]string,
 	groups map[string][]string,
-	alluserstrings []string) {
+	alluserstrings []string,
+	reponame string) {
 
 	for _, ug := range ugs {
 		if slices.Contains(alluserstrings, ug) {
 			if users[ug] != nil {
-				users[ug] = append(users[ug], permission)
+				if slices.Contains(users[ug], permission) {
+					fmt.Printf("'%s': Ignoring duplicate permission '%s' for user '%s'\n", reponame, permission, ug)
+					ignoredDuplicatePermissionCount++
+				} else {
+					users[ug] = append(users[ug], permission)
+				}
 			} else {
 				users[ug] = []string{permission}
 			}
 		} else {
 			if groups[ug] != nil {
-				groups[ug] = append(groups[ug], permission)
+				if slices.Contains(groups[ug], permission) {
+					fmt.Printf("'%s': Ignoring duplicate permission '%s' for group '%s'\n", reponame, permission, ug)
+					ignoredDuplicatePermissionCount++
+				} else {
+					groups[ug] = append(groups[ug], permission)
+				}
 			} else {
 				groups[ug] = []string{permission}
 			}
