@@ -284,39 +284,29 @@ func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []Artifactory
 		return fmt.Errorf("invalid name for repo")
 	}
 
-	errors := checkUsersAndGroups(repo.Read, allusers, allgroups)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			fmt.Printf("'%s': Permission read: %v\n", repo.Name, err)
+	hasErrors := false
+
+	for _, check := range []struct {
+		values []string
+		perm   string
+	}{
+		{repo.Read, "read"},
+		{repo.Annotate, "annotate"},
+		{repo.Write, "write"},
+		{repo.Delete, "delete"},
+		{repo.Manage, "manage"},
+		{repo.Scan, "scan"},
+	} {
+		errors := checkUsersAndGroups(check.values, allusers, allgroups)
+		if len(errors) > 0 {
+			for _, err := range errors {
+				fmt.Printf("'%s': Permission %s: %v\n", repo.Name, check.perm, err)
+			}
+			hasErrors = true
 		}
-		return fmt.Errorf("see errors above for details")
 	}
-	errors = checkUsersAndGroups(repo.Annotate, allusers, allgroups)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			fmt.Printf("'%s': Permission annotate: %v\n", repo.Name, err)
-		}
-		return fmt.Errorf("see errors above for details")
-	}
-	errors = checkUsersAndGroups(repo.Write, allusers, allgroups)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			fmt.Printf("'%s': Permission write: %v\n", repo.Name, err)
-		}
-		return fmt.Errorf("see errors above for details")
-	}
-	errors = checkUsersAndGroups(repo.Delete, allusers, allgroups)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			fmt.Printf("'%s': Permission delete: %v\n", repo.Name, err)
-		}
-		return fmt.Errorf("see errors above for details")
-	}
-	errors = checkUsersAndGroups(repo.Manage, allusers, allgroups)
-	if len(errors) > 0 {
-		for _, err := range errors {
-			fmt.Printf("'%s': Permission manage: %v\n", repo.Name, err)
-		}
+
+	if hasErrors {
 		return fmt.Errorf("see errors above for details")
 	}
 
@@ -480,6 +470,21 @@ func createNewRepo(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+
+	fields := []string{}
+	if repo.Description != "" {
+		fields = append(fields, fmt.Sprintf("Description: '%s'", repo.Description))
+	}
+	if repo.Rclass != "" {
+		fields = append(fields, fmt.Sprintf("Rclass: '%s'", repo.Rclass))
+	}
+	if repo.PackageType != "" {
+		fields = append(fields, fmt.Sprintf("PackageType: '%s'", repo.PackageType))
+	}
+	if repo.Layout != "" {
+		fields = append(fields, fmt.Sprintf("Layout: '%s'", repo.Layout))
+	}
+	fmt.Printf("'%s': %s\n", repo.Name, strings.Join(fields, ", "))
 
 	if !dryRun {
 		resp, err := client.Do(req)
@@ -724,7 +729,7 @@ func printDiff(repo Repo, old map[string][]string, new map[string][]string, kind
 			permissionsOld := old[name]
 			slices.Sort(permissionsOld)
 
-			fmt.Printf("'%s': %s diff: '%s': %s -> removed.\n", repo.Name, kind, name, strings.Join(permissionsOld, ", "))
+			fmt.Printf("'%s': %s diff: '%s': %s -> removed\n", repo.Name, kind, name, strings.Join(permissionsOld, ", "))
 		} else if !foundOld && foundNew {
 			permissionsNew := new[name]
 			slices.Sort(permissionsNew)
@@ -782,6 +787,7 @@ func convertUsersAndGroups(
 	getUsersAndGroupsPermission(repo.Write, "WRITE", users, groups, alluserstrings, repo.Name)
 	getUsersAndGroupsPermission(repo.Delete, "DELETE", users, groups, alluserstrings, repo.Name)
 	getUsersAndGroupsPermission(repo.Manage, "MANAGE", users, groups, alluserstrings, repo.Name)
+	getUsersAndGroupsPermission(repo.Scan, "SCAN", users, groups, alluserstrings, repo.Name)
 
 	if existingPermission != nil {
 		addUnknownPermissions(users, (*existingPermission).Resources.Artifact.Actions.Users, repo.Name, "user")
@@ -792,7 +798,7 @@ func convertUsersAndGroups(
 }
 
 func addUnknownPermissions(ugsNew map[string][]string, ugsExisting map[string][]string, reponame string, typename string) {
-	knownPermissions := []string{"READ", "ANNOTATE", "WRITE", "DELETE", "MANAGE"}
+	knownPermissions := []string{"READ", "ANNOTATE", "WRITE", "DELETE", "MANAGE", "SCAN"}
 
 	for ug, permissions := range ugsExisting {
 		for _, permission := range permissions {

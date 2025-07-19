@@ -90,6 +90,7 @@ func Generate(
 		slices.Sort(repoToSave.Write)
 		slices.Sort(repoToSave.Delete)
 		slices.Sort(repoToSave.Manage)
+		slices.Sort(repoToSave.Scan)
 
 		if combineRepos {
 			found := false
@@ -102,7 +103,8 @@ func Generate(
 					equalStringSlices(reposToSave[i].Annotate, repoToSave.Annotate) &&
 					equalStringSlices(reposToSave[i].Write, repoToSave.Write) &&
 					equalStringSlices(reposToSave[i].Delete, repoToSave.Delete) &&
-					equalStringSlices(reposToSave[i].Manage, repoToSave.Manage) {
+					equalStringSlices(reposToSave[i].Manage, repoToSave.Manage) &&
+					equalStringSlices(reposToSave[i].Scan, repoToSave.Scan) {
 					found = true
 					if reposToSave[i].Name != "" {
 						reposToSave[i].Names = append(reposToSave[i].Names, reposToSave[i].Name, repoToSave.Name)
@@ -209,6 +211,9 @@ func addPermissionsToRepo(repo *Repo, permissions map[string][]string) {
 		}
 		if slices.Contains(rolePermissions, "MANAGE") && !slices.Contains(repo.Manage, name) {
 			repo.Manage = append(repo.Manage, name)
+		}
+		if slices.Contains(rolePermissions, "SCAN") && !slices.Contains(repo.Scan, name) {
+			repo.Scan = append(repo.Scan, name)
 		}
 	}
 }
