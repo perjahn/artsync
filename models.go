@@ -92,6 +92,7 @@ type Repo struct {
 	Write        []string `json:"write,omitempty"`
 	Delete       []string `json:"delete,omitempty"`
 	Manage       []string `json:"manage,omitempty"`
+	Scan         []string `json:"scan,omitempty"`
 	SourceFile   string   `json:"-"`
 	SourceOffset int      `json:"-"`
 	SourceLine   int      `json:"-"`

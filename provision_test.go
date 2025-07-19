@@ -49,6 +49,7 @@ func TestProvision(t *testing.T) {
 					Read:        []string{"test-user", "test-user"},
 					Write:       []string{"test-user"},
 					Manage:      []string{"test-user"},
+					Scan:        []string{"test-user"},
 				},
 			},
 			[]ArtifactoryRepoDetailsResponse{
@@ -76,7 +77,7 @@ func TestProvision(t *testing.T) {
 						Artifact: ArtifactoryPermissionDetailsArtifact{
 							Actions: ArtifactoryPermissionDetailsActions{
 								Users: map[string][]string{
-									"test-user": {"READ", "WRITE", "SCAN"},
+									"test-user": {"READ", "WRITE", "OTHER"},
 								},
 								Groups: map[string][]string{
 									"test-group": {"READ"},

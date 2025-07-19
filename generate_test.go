@@ -202,4 +202,7 @@ func TestAddPermissionsToRepo(t *testing.T) {
 	if len(repo.Manage) != 0 {
 		t.Errorf("addPermissionsToRepo (1/1): failed to not add any user to MANAGE: (%d) '%s'", len(repo.Manage), strings.Join(repo.Manage, "', '"))
 	}
+	if len(repo.Scan) != 0 {
+		t.Errorf("addPermissionsToRepo (1/1): failed to not add any user to SCAN: (%d) '%s'", len(repo.Scan), strings.Join(repo.Scan, "', '"))
+	}
 }
