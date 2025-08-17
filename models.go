@@ -4,7 +4,6 @@ type ArtifactoryRepoResponse struct {
 	Key         string `json:"key"`
 	Description string `json:"description"`
 	Type        string `json:"type"`
-	Url         string `json:"url"`
 	PackageType string `json:"packageType"`
 }
 

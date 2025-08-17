@@ -268,7 +268,6 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 
 		if resp.StatusCode != 200 {
 			fmt.Printf("Url: '%s'\n", url)
-			fmt.Printf("Url2: '%s'\n", repo.Url)
 			fmt.Printf("Unexpected status: '%s'\n", resp.Status)
 			fmt.Printf("Response body: '%s'\n", body)
 		}

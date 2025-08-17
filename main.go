@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ func main() {
 	combineRepos := flag.Bool("c", false, "Combine identical repos, when generating.")
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
+	ignoreCert := flag.Bool("k", false, "Ignore https cert validation errors.")
 	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning.")
 	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
@@ -82,6 +84,11 @@ func main() {
 	}
 
 	client := &http.Client{}
+	if *ignoreCert {
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
 
 	var reposToProvision []Repo
 
@@ -185,7 +192,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

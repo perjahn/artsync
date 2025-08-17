@@ -73,6 +73,7 @@ func loadRepoFile(repofile string) ([]Repo, error) {
 			positions := []position{}
 			t := node.GetToken()
 			for {
+				fmt.Printf("'%s' %d\n", t.Value, t.Position.IndentLevel)
 				if t.Value == "-" && t.Position.IndentLevel == 0 {
 					positions = append(positions, position{offset: t.Position.Offset, line: t.Position.Line})
 				}
@@ -360,7 +361,6 @@ func provisionRepo(
 			return fmt.Errorf("see errors above for details")
 		}
 		if !diff {
-			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
 			ignoredNoDiffRepoCount++
 		} else {
 			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
@@ -538,7 +538,6 @@ func provisionPermissionTarget(
 			diff = true
 		}
 		if !diff {
-			//fmt.Printf("'%s': No diff, skipping update...\n", repo.Name)
 			ignoredNoDiffPermissionCount++
 		} else {
 			for _, target := range existingPermission.Resources.Artifact.Targets {
