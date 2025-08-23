@@ -9,50 +9,79 @@ import (
 	"os"
 )
 
-func GetStuff(client *http.Client, baseurl string, token string) ([]ArtifactoryRepoDetailsResponse, []ArtifactoryUser, []ArtifactoryGroup, []ArtifactoryPermissionDetails, error) {
+func GetStuff(
+	client *http.Client,
+	baseurl string,
+	token string,
+	retrieveldapsettings bool) (
+	[]ArtifactoryRepoDetailsResponse,
+	[]ArtifactoryUser,
+	[]ArtifactoryGroup,
+	[]ArtifactoryPermissionDetails,
+	[]ArtifactoryLDAPSettings,
+	[]ArtifactoryLDAPGroupSettings,
+	error) {
 	repos, err := getRepos(client, baseurl, token)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo count: %d\n", len(repos))
 
 	repodetails, err := getRepoDetails(client, baseurl, token, repos)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo details count: %d\n", len(repodetails))
 
 	permissions, err := getPermissions(client, baseurl, token)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Permissions count: %d\n", len(permissions))
 
 	users, err := getUsers(client, baseurl, token)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("User count: %d\n", len(users))
 
 	groups, err := getGroups(client, baseurl, token)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Group count: %d\n", len(groups))
 
 	permissiondetails, err := getPermissionDetails(client, baseurl, token, permissions)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Permission details count: %d\n", len(permissiondetails))
 
-	return repodetails, users, groups, permissiondetails, nil
+	var ldapsettings []ArtifactoryLDAPSettings
+	var ldapgroupsettings []ArtifactoryLDAPGroupSettings
+	if retrieveldapsettings {
+		ldapsettings, err = getLDAPSettings(client, baseurl, token)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, err
+		}
+
+		fmt.Printf("LDAP settings count: %d\n", len(ldapsettings))
+
+		ldapgroupsettings, err = getLDAPGroupSettings(client, baseurl, token)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, err
+		}
+
+		fmt.Printf("LDAP group settings count: %d\n", len(ldapgroupsettings))
+	}
+
+	return repodetails, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, nil
 }
 
 func getUsers(client *http.Client, baseurl string, token string) ([]ArtifactoryUser, error) {
@@ -436,4 +465,132 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 	}
 
 	return allpermissiondetails, nil
+}
+
+func getLDAPSettings(client *http.Client, baseurl string, token string) ([]ArtifactoryLDAPSettings, error) {
+	var settings []ArtifactoryLDAPSettings
+
+	cachefilename := "ldap_settings.json"
+	if _, err := os.Stat(cachefilename); err == nil {
+		fmt.Printf("Using cached ldap settings from file: '%s'\n", cachefilename)
+
+		data, err := os.ReadFile(cachefilename)
+		if err != nil {
+			return nil, fmt.Errorf("error saving groups: %w", err)
+		}
+
+		err = json.Unmarshal(data, &settings)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing response body: %w", err)
+		}
+
+		return settings, nil
+	}
+
+	url := fmt.Sprintf("%s/access/api/v1/ldap/settings", baseurl)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("Url: '%s'\n", url)
+		fmt.Printf("Unexpected status: '%s'\n", resp.Status)
+		fmt.Printf("Response body: '%s'\n", body)
+	}
+
+	err = json.Unmarshal(body, &settings)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing response body: %w", err)
+	}
+
+	json, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("error generating json: %w", err)
+	}
+
+	err = os.WriteFile("allldapsettings.json", []byte(json), 0600)
+	if err != nil {
+		return nil, fmt.Errorf("error saving groups: %w", err)
+	}
+
+	return settings, nil
+}
+
+func getLDAPGroupSettings(client *http.Client, baseurl string, token string) ([]ArtifactoryLDAPGroupSettings, error) {
+	var groups []ArtifactoryLDAPGroupSettings
+
+	cachefilename := "ldap_groups.json"
+	if _, err := os.Stat(cachefilename); err == nil {
+		fmt.Printf("Using cached ldap groups from file: '%s'\n", cachefilename)
+
+		data, err := os.ReadFile(cachefilename)
+		if err != nil {
+			return nil, fmt.Errorf("error saving groups: %w", err)
+		}
+
+		err = json.Unmarshal(data, &groups)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing response body: %w", err)
+		}
+
+		return groups, nil
+	}
+
+	url := fmt.Sprintf("%s/access/api/v1/ldap/groups", baseurl)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("Url: '%s'\n", url)
+		fmt.Printf("Unexpected status: '%s'\n", resp.Status)
+		fmt.Printf("Response body: '%s'\n", body)
+	}
+
+	err = json.Unmarshal(body, &groups)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing response body: %w", err)
+	}
+
+	json, err := json.MarshalIndent(groups, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("error generating json: %w", err)
+	}
+
+	err = os.WriteFile("allldapgroupsettings.json", []byte(json), 0600)
+	if err != nil {
+		return nil, fmt.Errorf("error saving groups: %w", err)
+	}
+
+	return groups, nil
 }
