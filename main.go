@@ -16,9 +16,12 @@ func main() {
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
 	ignoreCert := flag.Bool("k", false, "Ignore https cert validation errors.")
+	importLdapGroups := flag.Bool("l", false, "Import missing groups from ldap.")
 	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning.")
 	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
+	split := flag.Bool("s", false, "Split into one file for each repo, when generating (ignores combine flag and specified filename).")
+	createUsers := flag.Bool("u", false, "Create missing users.")
 	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
 	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
 
@@ -56,6 +59,10 @@ func main() {
 	}
 	if !*generate && *overwrite {
 		fmt.Println("Error: -w flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *split {
+		fmt.Println("Error: -s flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 	if !*generate && *generateyaml {
@@ -113,13 +120,13 @@ func main() {
 	}
 
 	if *generate {
-		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, repofiles[0], *generateyaml)
+		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, *split, repofiles[0], *generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		err = Provision(reposToProvision, repos, users, groups, permissiondetails, client, baseurl, token, *allowpatterns, *dryRun)
+		err = Provision(reposToProvision, repos, users, groups, permissiondetails, client, baseurl, token, *allowpatterns, *createUsers, *importLdapGroups, *dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
@@ -192,7 +199,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

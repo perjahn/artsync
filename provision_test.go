@@ -122,7 +122,7 @@ func TestProvision(t *testing.T) {
 				return reponse, nil
 			})
 		}
-		err := Provision(tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, client, "", "", tc.allowPatterns, tc.dryRun)
+		err := Provision(tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, client, "", "", tc.allowPatterns, false, false, tc.dryRun)
 		if err != nil {
 			t.Errorf("Provision (%d/%d): error = %v",
 				i, len(tests), err)
