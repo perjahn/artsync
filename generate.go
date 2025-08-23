@@ -18,6 +18,7 @@ func Generate(
 	onlyGenerateMatchingRepos bool,
 	onlyGenerateCleanRepos bool,
 	combineRepos bool,
+	split bool,
 	repofile string,
 	generateyaml bool) error {
 
@@ -137,30 +138,72 @@ func Generate(
 		return reposToSave[i].Name < reposToSave[j].Name
 	})
 
-	var data []byte
-	if generateyaml {
-		var err error
-		data, err = yaml.Marshal(reposToSave)
-		if err != nil {
-			return fmt.Errorf("error generating yaml: %w", err)
+	if !split {
+		var data []byte
+		if generateyaml {
+			var err error
+			data, err = yaml.Marshal(reposToSave)
+			if err != nil {
+				return fmt.Errorf("error generating yaml: %w", err)
+			}
+		} else {
+			var err error
+			data, err = json.MarshalIndent(reposToSave, "", "  ")
+			if err != nil {
+				return fmt.Errorf("error generating json: %w", err)
+			}
 		}
-	} else {
-		var err error
-		data, err = json.MarshalIndent(reposToSave, "", "  ")
+
+		file, err := os.Create(repofile)
 		if err != nil {
-			return fmt.Errorf("error generating json: %w", err)
+			return fmt.Errorf("error creating file: %w", err)
 		}
+		defer file.Close()
+
+		_, err = file.Write(data)
+		if err != nil {
+			return fmt.Errorf("error saving file: %w", err)
+		}
+		return nil
 	}
 
-	file, err := os.Create(repofile)
-	if err != nil {
-		return fmt.Errorf("error creating file: %w", err)
-	}
-	defer file.Close()
+	for _, repo := range reposToSave {
+		var reponame string
+		var filename string
+		var data []byte
+		if generateyaml {
+			filename = repo.Name + ".yaml"
+			reponame = repo.Name
+			repo.Name = ""
 
-	_, err = file.Write(data)
-	if err != nil {
-		return fmt.Errorf("error saving file: %w", err)
+			var err error
+			data, err = yaml.Marshal(repo)
+			if err != nil {
+				return fmt.Errorf("error generating yaml: %w", err)
+			}
+		} else {
+			filename = repo.Name + ".json"
+			reponame = repo.Name
+			repo.Name = ""
+
+			var err error
+			data, err = json.MarshalIndent(repo, "", "  ")
+			if err != nil {
+				return fmt.Errorf("error generating json: %w", err)
+			}
+		}
+
+		fmt.Printf("Saving repo '%s' to file '%s'\n", reponame, filename)
+		file, err := os.Create(filename)
+		if err != nil {
+			return fmt.Errorf("error creating file: %w", err)
+		}
+		defer file.Close()
+
+		_, err = file.Write(data)
+		if err != nil {
+			return fmt.Errorf("error saving file: %w", err)
+		}
 	}
 
 	return nil

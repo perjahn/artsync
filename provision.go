@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,32 +18,37 @@ var ignoredNoDiffRepoCount int
 var ignoredInvalidPermissionCount int
 var ignoredNoDiffPermissionCount int
 var ignoredDuplicatePermissionCount int
+var importGroupsCount int
+var createUsersCount int
 
 func Provision(
+	client *http.Client,
+	baseurl string,
+	token string,
 	reposToProvision []Repo,
 	allrepos []ArtifactoryRepoDetailsResponse,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
-	client *http.Client,
-	baseurl string,
-	token string,
 	allowpatterns bool,
+	createUsers bool,
+	ldapConfig LdapConfig,
 	dryRun bool) error {
 
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
 	for _, repo := range reposToProvision {
-		err := validateRepo(repo, allusers, allgroups)
+		var err error
+		allusers, allgroups, err = validateRepo(client, baseurl, token, repo, allusers, allgroups, createUsers, ldapConfig, dryRun)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 			ignoredInvalidRepoCount++
 		} else {
-			err := provisionRepo(repo, allrepos, client, baseurl, token, dryRun)
+			err := provisionRepo(client, baseurl, token, repo, allrepos, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 				ignoredInvalidRepoCount++
 			} else {
-				err = provisionPermissionTarget(repo, allusers, allpermissiondetails, client, baseurl, token, allowpatterns, dryRun)
+				err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, allowpatterns, dryRun)
 				if err != nil {
 					fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
 					ignoredInvalidPermissionCount++
@@ -58,17 +64,29 @@ func Provision(
 	fmt.Printf("Ignored invalid permission targets: %d\n", ignoredInvalidPermissionCount)
 	fmt.Printf("Ignored no diff permission targets: %d\n", ignoredNoDiffPermissionCount)
 	fmt.Printf("Ignored duplicate permissions: %d\n", ignoredDuplicatePermissionCount)
+	fmt.Printf("Imported groups: %d\n", importGroupsCount)
+	fmt.Printf("Created users: %d\n", createUsersCount)
 
 	return nil
 }
 
-func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []ArtifactoryGroup) error {
+func validateRepo(
+	client *http.Client,
+	baseurl string,
+	token string,
+	repo Repo,
+	allusers []ArtifactoryUser,
+	allgroups []ArtifactoryGroup,
+	createUsers bool,
+	ldapConfig LdapConfig,
+	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, error) {
+
 	if repo.Name == "" {
-		return fmt.Errorf("missing name for repo")
+		return nil, nil, fmt.Errorf("missing name for repo")
 	}
 
 	if !isValidRepoName(repo.Name) {
-		return fmt.Errorf("invalid name for repo")
+		return nil, nil, fmt.Errorf("invalid name for repo")
 	}
 
 	hasErrors := false
@@ -84,9 +102,10 @@ func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []Artifactory
 		{repo.Manage, "manage"},
 		{repo.Scan, "scan"},
 	} {
-		errors := checkUsersAndGroups(check.values, allusers, allgroups)
-		if len(errors) > 0 {
-			for _, err := range errors {
+		var errs []error
+		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, check.values, allusers, allgroups, createUsers, ldapConfig, dryRun)
+		if len(errs) > 0 {
+			for _, err := range errs {
 				fmt.Printf("'%s': Permission %s: %v\n", repo.Name, check.perm, err)
 			}
 			hasErrors = true
@@ -94,18 +113,18 @@ func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []Artifactory
 	}
 
 	if hasErrors {
-		return fmt.Errorf("see errors above for details")
+		return nil, nil, fmt.Errorf("see errors above for details")
 	}
 
-	return nil
+	return allusers, allgroups, nil
 }
 
 func provisionRepo(
-	repo Repo,
-	allrepos []ArtifactoryRepoDetailsResponse,
 	client *http.Client,
 	baseurl string,
 	token string,
+	repo Repo,
+	allrepos []ArtifactoryRepoDetailsResponse,
 	dryRun bool) error {
 
 	if repo.Rclass == "" {
@@ -151,7 +170,7 @@ func provisionRepo(
 		} else {
 			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
 
-			err := updateExistingRepo(repo, existingRepo, client, baseurl, token, dryRun)
+			err := updateExistingRepo(client, baseurl, token, repo, existingRepo, dryRun)
 			if err != nil {
 				return err
 			}
@@ -159,7 +178,7 @@ func provisionRepo(
 	} else {
 		fmt.Printf("'%s': Repo does not exist, creating...\n", repo.Name)
 
-		err := createNewRepo(repo, client, baseurl, token, dryRun)
+		err := createNewRepo(client, baseurl, token, repo, dryRun)
 		if err != nil {
 			return err
 		}
@@ -169,11 +188,11 @@ func provisionRepo(
 }
 
 func updateExistingRepo(
-	repo Repo,
-	existingRepo *ArtifactoryRepoDetailsResponse,
 	client *http.Client,
 	baseurl string,
 	token string,
+	repo Repo,
+	existingRepo *ArtifactoryRepoDetailsResponse,
 	dryRun bool,
 ) error {
 
@@ -229,10 +248,10 @@ func updateExistingRepo(
 }
 
 func createNewRepo(
-	repo Repo,
 	client *http.Client,
 	baseurl string,
 	token string,
+	repo Repo,
 	dryRun bool,
 ) error {
 
@@ -296,12 +315,12 @@ func createNewRepo(
 }
 
 func provisionPermissionTarget(
+	client *http.Client,
+	baseurl string,
+	token string,
 	repo Repo,
 	allusers []ArtifactoryUser,
 	allpermissiondetails []ArtifactoryPermissionDetails,
-	client *http.Client,
-	baseurl,
-	token string,
 	allowpatterns bool,
 	dryRun bool) error {
 
@@ -337,25 +356,25 @@ func provisionPermissionTarget(
 
 			fmt.Printf("'%s': Permission target already exists, updating...\n", repo.Name)
 
-			updateExistingPermission(repo, users, groups, existingPermission, client, baseurl, token, dryRun)
+			updateExistingPermission(client, baseurl, token, repo, users, groups, existingPermission, dryRun)
 		}
 	} else {
 		fmt.Printf("'%s': Permission target does not exist, creating...\n", repo.Name)
 
-		createNewPermission(repo, users, groups, client, baseurl, token, dryRun)
+		createNewPermission(client, baseurl, token, repo, users, groups, dryRun)
 	}
 
 	return nil
 }
 
 func updateExistingPermission(
+	client *http.Client,
+	baseurl string,
+	token string,
 	repo Repo,
 	users map[string][]string,
 	groups map[string][]string,
 	existingPermission *ArtifactoryPermissionDetails,
-	client *http.Client,
-	baseurl,
-	token string,
 	dryRun bool) error {
 
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Users, users) {
@@ -385,7 +404,7 @@ func updateExistingPermission(
 	}
 	req, err := http.NewRequest("PUT", url, strings.NewReader(string(json)))
 	if err != nil {
-		return fmt.Errorf("error updating permission target, error updating request: %w", err)
+		return fmt.Errorf("error updating permission target, error creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -414,11 +433,12 @@ func updateExistingPermission(
 }
 
 func createNewPermission(
+	client *http.Client,
+	baseurl string,
+	token string,
 	repo Repo,
 	users map[string][]string,
 	groups map[string][]string,
-	client *http.Client,
-	baseurl, token string,
 	dryRun bool) error {
 
 	printDiff(repo, map[string][]string{}, users, "Users")
@@ -634,19 +654,30 @@ func getUsersAndGroupsPermission(
 	}
 }
 
-func checkUsersAndGroups(usersAndGroups []string, users []ArtifactoryUser, groups []ArtifactoryGroup) []error {
-	var errors []error
+func checkUsersAndGroups(
+	client *http.Client,
+	baseurl string,
+	token string,
+	usersAndGroups []string,
+	allusers []ArtifactoryUser,
+	allgroups []ArtifactoryGroup,
+	createUsers bool,
+	ldapConfig LdapConfig,
+	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, []error) {
+
+	var errs []error
+	importGroups := ldapConfig.Importgroups
 
 	for _, ug := range usersAndGroups {
 		userExists := false
-		for _, u := range users {
+		for _, u := range allusers {
 			if u.Username == ug {
 				userExists = true
 				break
 			}
 		}
 		groupExists := false
-		for _, g := range groups {
+		for _, g := range allgroups {
 			if g.GroupName == ug {
 				groupExists = true
 				break
@@ -654,15 +685,109 @@ func checkUsersAndGroups(usersAndGroups []string, users []ArtifactoryUser, group
 		}
 
 		if userExists && groupExists {
-			errors = append(errors, fmt.Errorf("both user and group exists with the name: '%s'", ug))
+			errs = append(errs, fmt.Errorf("both user and group exists with the name: '%s'", ug))
+			continue
 		}
 
 		if !userExists && !groupExists {
-			errors = append(errors, fmt.Errorf("no user or group exists with the name: '%s'", ug))
+			var errGroup error
+			var errUser error
+
+			if importGroups {
+				fmt.Printf("Importing group: '%s'\n", ug)
+				errGroup = ImportGroup(
+					client,
+					baseurl,
+					ldapConfig.Username,
+					ldapConfig.Password,
+					ug,
+					ldapConfig.ldapsettings,
+					ldapConfig.ldapgroupsettings,
+					ldapConfig.Ldapgroupsettingsname,
+					ldapConfig.Ldapusername,
+					ldapConfig.Ldappassword,
+					dryRun)
+				if errGroup == nil {
+					allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
+					importGroupsCount++
+				}
+			}
+
+			if (createUsers && importGroups && errGroup != nil) || (createUsers && !importGroups) {
+				fmt.Printf("Creating user: '%s'\n", ug)
+				errUser = createUser(client, baseurl, token, ug, dryRun)
+				if errUser == nil {
+					allusers = append(allusers, ArtifactoryUser{Username: ug})
+					errGroup = nil
+					createUsersCount++
+				}
+			}
+
+			if errGroup != nil || errUser != nil {
+				joined := errors.Join(errGroup, errUser)
+				errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s': %w", ug, joined))
+			}
 		}
 	}
 
-	return errors
+	return allusers, allgroups, errs
+}
+
+func createUser(
+	client *http.Client,
+	baseurl string,
+	token string,
+	username string,
+	dryRun bool) error {
+
+	url := fmt.Sprintf("%s/access/api/v2/users", baseurl)
+
+	var email string
+	if at := strings.Index(username, "@"); at != -1 {
+		email = username
+	} else {
+		email = fmt.Sprintf("%s@example.com", username)
+	}
+
+	artifactoryUserRequest := ArtifactoryUserRequest{
+		Username:                 username,
+		Email:                    email,
+		InternalPasswordDisabled: true,
+	}
+
+	json, err := json.Marshal(artifactoryUserRequest)
+
+	if err != nil {
+		return fmt.Errorf("error creating user, error generating json: %w", err)
+	}
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(json)))
+	if err != nil {
+		return fmt.Errorf("error creating user, error creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if !dryRun {
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("error creating user: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 201 {
+			fmt.Printf("Username: '%s'\n", username)
+			fmt.Printf("Url: '%s'\n", url)
+			fmt.Printf("Unexpected status: '%s'\n", resp.Status)
+			fmt.Printf("Request body: '%s'\n", req.Body)
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Response body: '%s'\n", body)
+			return fmt.Errorf("error creating user")
+		} else {
+			fmt.Printf("'%s': Created user successfully.\n", username)
+		}
+	}
+
+	return nil
 }
 
 func isValidRepoName(s string) bool {

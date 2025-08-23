@@ -82,7 +82,7 @@ func TestGenerate(t *testing.T) {
 `},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, tc.filename, true)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, false, tc.filename, true)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -187,7 +187,7 @@ func TestAddPermissionsToRepo(t *testing.T) {
 	}
 	addPermissionsToRepo(repo, perms)
 	addPermissionsToRepo(repo, perms)
-	if len(repo.Read) != 2 || repo.Read[0] != "user1" || repo.Read[1] != "user2" {
+	if len(repo.Read) != 2 || ((repo.Read[0] != "user1" || repo.Read[1] != "user2") && (repo.Read[0] != "user2" || repo.Read[1] != "user1")) {
 		t.Errorf("addPermissionsToRepo (1/1): failed to add user1 and/or user2 to READ: (%d) '%s'", len(repo.Read), strings.Join(repo.Read, "', '"))
 	}
 	if len(repo.Annotate) != 1 || repo.Annotate[0] != "user2" {

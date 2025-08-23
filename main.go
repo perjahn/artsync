@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -16,9 +17,12 @@ func main() {
 	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generate := flag.Bool("g", false, "Generate repo file.")
 	ignoreCert := flag.Bool("k", false, "Ignore https cert validation errors.")
+	importLdapGroupsFilename := flag.String("l", "", "Import missing groups from ldap. Argument specifies an ldap configuration file.")
 	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
-	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning.")
+	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
 	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
+	split := flag.Bool("s", false, "Split into one file for each repo, when generating (ignores combine flag and specified filename).")
+	createUsers := flag.Bool("u", false, "Create missing users.")
 	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
 	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
 
@@ -56,6 +60,10 @@ func main() {
 	}
 	if !*generate && *overwrite {
 		fmt.Println("Error: -w flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !*generate && *split {
+		fmt.Println("Error: -s flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 	if !*generate && *generateyaml {
@@ -106,25 +114,94 @@ func main() {
 		}
 	}
 
-	repos, users, groups, permissiondetails, err := GetStuff(client, baseurl, token)
+	var retrieveldapsettings = false
+	if *importLdapGroupsFilename != "" {
+		retrieveldapsettings = true
+	}
+
+	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, retrieveldapsettings)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	if *generate {
-		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, repofiles[0], *generateyaml)
+		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, *split, repofiles[0], *generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		err = Provision(reposToProvision, repos, users, groups, permissiondetails, client, baseurl, token, *allowpatterns, *dryRun)
+		var ldapConfig LdapConfig
+		if *importLdapGroupsFilename != "" {
+			ldapConfig, err = loadLdapConfig(*importLdapGroupsFilename, ldapsettings, ldapgroupsettings)
+			if err != nil {
+				fmt.Printf("Error reading ldap config: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, *allowpatterns, *createUsers, ldapConfig, *dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
 		}
 	}
+}
+
+func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
+	var ldapConfig LdapConfig
+	var empty LdapConfig
+	empty.Importgroups = false
+
+	if importLdapGroupsFilename != "" {
+		data, err := os.ReadFile(importLdapGroupsFilename)
+		if err != nil {
+			return LdapConfig{}, fmt.Errorf("Error reading ldap config file '%s': %v\n", importLdapGroupsFilename, err)
+		}
+		err = json.Unmarshal(data, &ldapConfig)
+		if err != nil {
+			return LdapConfig{}, fmt.Errorf("Error parsing ldap config file '%s': %v\n", importLdapGroupsFilename, err)
+		}
+	}
+
+	envUsername := os.Getenv("ARTSYNC_LDAP_USERNAME")
+	if envUsername != "" {
+		ldapConfig.Username = envUsername
+	}
+	envPassword := os.Getenv("ARTSYNC_LDAP_PASSWORD")
+	if envPassword != "" {
+		ldapConfig.Password = envPassword
+	}
+	envLdapgroupsettingsname := os.Getenv("ARTSYNC_LDAP_LDAPGROUPSETTINGSNAME")
+	if envLdapgroupsettingsname != "" {
+		ldapConfig.Ldapgroupsettingsname = envLdapgroupsettingsname
+	}
+	envLdapusername := os.Getenv("ARTSYNC_LDAP_LDAPUSERNAME")
+	if envLdapusername != "" {
+		ldapConfig.Ldapusername = envLdapusername
+	}
+	envLdappassword := os.Getenv("ARTSYNC_LDAP_LDAPPASSWORD")
+	if envLdappassword != "" {
+		ldapConfig.Ldappassword = envLdappassword
+	}
+
+	if ldapConfig.Username == "" || ldapConfig.Password == "" || ldapConfig.Ldapgroupsettingsname == "" || ldapConfig.Ldapusername == "" || ldapConfig.Ldappassword == "" {
+		return empty, nil
+	} else {
+		if len(ldapsettings) == 0 || len(ldapgroupsettings) == 0 {
+			return empty, fmt.Errorf("Error: Couldn't retrieve ldap settings from Artifactory, cannot import ldap groups: ldapsettings count: %d, ldapgroupsettings count: %d",
+				len(ldapsettings), len(ldapgroupsettings))
+		}
+	}
+
+	fmt.Printf("Using ldap config file: '%s'\n", importLdapGroupsFilename)
+
+	ldapConfig.Importgroups = true
+	ldapConfig.ldapsettings = ldapsettings
+	ldapConfig.ldapgroupsettings = ldapgroupsettings
+
+	return ldapConfig, nil
 }
 
 func getBaseURL(arg string) string {
@@ -192,7 +269,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-m] [-p] [-q] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-l ldap.config] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

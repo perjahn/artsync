@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,94 +38,138 @@ func loadRepoFile(repofile string) ([]Repo, error) {
 	}
 
 	var repos []Repo
+	var errjson, erryaml error
 
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	errjson := decoder.Decode(&repos)
-	if errjson != nil {
-		erryaml := yaml.Unmarshal(data, &repos)
+	repos, errjson = tryParseJsonRepos(data, repofile)
+	if len(repos) == 0 || errjson != nil {
+		repos, erryaml = tryParseYamlRepos(data, repofile)
 		if erryaml != nil {
-			return nil, fmt.Errorf("error parsing json/yaml file: %w %w", errjson, erryaml)
-		} else {
-			if len(repos) == 0 {
-				fmt.Printf("Warning: Ignoring empty yaml file: '%s'\n", repofile)
-				ignoredInvalidRepoFilesCount++
-				return repos, nil
-			}
-
-			var node ast.Node
-			if err := yaml.Unmarshal(data, &node); err != nil {
-				return nil, fmt.Errorf("error parsing yaml file: %w", erryaml)
-			}
-
-			type position struct {
-				offset int
-				line   int
-			}
-			positions := []position{}
-			if node != nil {
-				t := node.GetToken()
-				for {
-					if t.Value == "-" && t.Position.IndentLevel == 0 {
-						positions = append(positions, position{offset: t.Position.Offset, line: t.Position.Line})
-					}
-					t = t.Next
-					if t == nil {
-						break
-					}
-				}
-			}
-			if len(positions) != len(repos) {
-				fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of yaml objects (%d)\n",
-					repofile, len(repos), len(positions))
-				ignoredInvalidRepoFilesCount++
-			}
-			for i := range repos {
-				repos[i].SourceFile = repofile
-				repos[i].SourceOffset = positions[i].offset
-				repos[i].SourceLine = positions[i].line
-			}
-		}
-	} else {
-		if len(repos) == 0 {
-			fmt.Printf("Warning: Ignoring empty json file: '%s'\n", repofile)
-			ignoredInvalidRepoFilesCount++
-			return repos, nil
-		}
-
-		decoder = json.NewDecoder(strings.NewReader(string(data)))
-		offsets := []int{}
-
-		for {
-			t, err := decoder.Token()
-			if err != nil {
-				break
-			}
-			if t == json.Delim('{') {
-				offsets = append(offsets, int(decoder.InputOffset()-1))
-			}
-		}
-		if len(offsets) != len(repos) {
-			fmt.Printf("Warning: Ignoring repo file (%s): Number of repos (%d) does not match number of json objects (%d)\n",
-				repofile, len(repos), len(offsets))
-			ignoredInvalidRepoFilesCount++
-		}
-		for i := range repos {
-			repos[i].SourceFile = repofile
-			repos[i].SourceOffset = offsets[i]
-			line := 1
-			for j := range data {
-				if data[j] == '\n' {
-					line++
-				}
-				if offsets[i] == j {
-					break
-				}
-			}
-			repos[i].SourceLine = line
+			fmt.Printf("Warning: Ignoring unparsable json/yaml file: '%s'\n", repofile)
+			return []Repo{}, nil
 		}
 	}
 
 	repos = expandRepos(repos)
+
+	if len(repos) == 0 {
+		ignoredInvalidRepoFilesCount++
+		fmt.Printf("Warning: Ignoring empty json/yaml file: '%s'\n", repofile)
+	}
+
+	return repos, nil
+}
+
+func tryParseJsonRepos(data []byte, repofile string) ([]Repo, error) {
+	var repos []Repo
+
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	errjson := decoder.Decode(&repos)
+	if errjson != nil {
+		var onerepo Repo
+		decoder1 := json.NewDecoder(strings.NewReader(string(data)))
+		errjson1 := decoder1.Decode(&onerepo)
+		if errjson1 != nil {
+			return nil, fmt.Errorf("error parsing file as json: %w", errors.Join(errjson, errjson1))
+		}
+
+		onerepo.SourceFile = repofile
+		onerepo.SourceOffset = 1
+		onerepo.SourceLine = 1
+
+		return []Repo{onerepo}, nil
+	}
+
+	if len(repos) == 0 {
+		return repos, nil
+	}
+
+	decoder = json.NewDecoder(strings.NewReader(string(data)))
+	offsets := []int{}
+	for {
+		t, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		if t == json.Delim('{') {
+			offsets = append(offsets, int(decoder.InputOffset()-1))
+		}
+	}
+	if len(offsets) != len(repos) {
+		ignoredInvalidRepoFilesCount++
+		return nil, fmt.Errorf("error number of repos (%d) does not match number of json objects (%d)",
+			len(repos), len(offsets))
+	}
+	for i := range repos {
+		repos[i].SourceFile = repofile
+		repos[i].SourceOffset = offsets[i]
+		line := 1
+		for j := range data {
+			if data[j] == '\n' {
+				line++
+			}
+			if offsets[i] == j {
+				break
+			}
+		}
+		repos[i].SourceLine = line
+	}
+
+	return repos, nil
+}
+
+func tryParseYamlRepos(data []byte, repofile string) ([]Repo, error) {
+	var repos []Repo
+
+	erryaml := yaml.Unmarshal(data, &repos)
+	if erryaml != nil {
+		var onerepo Repo
+		erryaml1 := yaml.Unmarshal(data, &onerepo)
+		if erryaml1 != nil {
+			return nil, fmt.Errorf("error parsing file as yaml1: %w", errors.Join(erryaml, erryaml1))
+		}
+
+		onerepo.SourceFile = repofile
+		onerepo.SourceOffset = 1
+		onerepo.SourceLine = 1
+
+		return []Repo{onerepo}, nil
+	}
+	if len(repos) == 0 {
+		return repos, nil
+	}
+
+	var node ast.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return nil, fmt.Errorf("error parsing file as yaml2: %w", erryaml)
+	}
+
+	type position struct {
+		offset int
+		line   int
+	}
+	positions := []position{}
+	if node != nil {
+		t := node.GetToken()
+		for {
+			if t.Value == "-" && t.Position.IndentLevel == 0 {
+				positions = append(positions, position{offset: t.Position.Offset, line: t.Position.Line})
+			}
+			t = t.Next
+			if t == nil {
+				break
+			}
+		}
+	}
+	if len(positions) != len(repos) {
+		ignoredInvalidRepoFilesCount++
+		return nil, fmt.Errorf("error number of repos (%d) does not match number of yaml objects (%d)",
+			len(repos), len(positions))
+	}
+	for i := range repos {
+		repos[i].SourceFile = repofile
+		repos[i].SourceOffset = positions[i].offset
+		repos[i].SourceLine = positions[i].line
+	}
 
 	return repos, nil
 }
@@ -138,7 +183,8 @@ func expandRepos(repos []Repo) []Repo {
 			repos[i].Name = strings.TrimSuffix(b, filepath.Ext(b))
 		}
 		if repos[i].Name != "" && len(repos[i].Names) > 0 {
-			fmt.Printf("Ignoring repo: Repo must not have both a name (%s) and names (%s)\n", repos[i].Name, strings.Join(repos[i].Names, ", "))
+			fmt.Printf("Warning: Ignoring repo: Repo must not have both a name (%s) and names (%s)\n",
+				repos[i].Name, strings.Join(repos[i].Names, ", "))
 			continue
 		}
 
