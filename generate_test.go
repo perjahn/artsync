@@ -82,7 +82,7 @@ func TestGenerate(t *testing.T) {
 `},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, tc.filename, true)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, false, tc.filename, true)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",

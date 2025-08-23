@@ -17,6 +17,8 @@ var ignoredNoDiffRepoCount int
 var ignoredInvalidPermissionCount int
 var ignoredNoDiffPermissionCount int
 var ignoredDuplicatePermissionCount int
+var importGroupsCount int
+var createUsersCount int
 
 func Provision(
 	reposToProvision []Repo,
@@ -28,11 +30,13 @@ func Provision(
 	baseurl string,
 	token string,
 	allowpatterns bool,
+	importGroups bool,
+	createUsers bool,
 	dryRun bool) error {
 
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
 	for _, repo := range reposToProvision {
-		err := validateRepo(repo, allusers, allgroups)
+		err := validateRepo(repo, allusers, allgroups, importGroups, createUsers)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 			ignoredInvalidRepoCount++
@@ -58,11 +62,19 @@ func Provision(
 	fmt.Printf("Ignored invalid permission targets: %d\n", ignoredInvalidPermissionCount)
 	fmt.Printf("Ignored no diff permission targets: %d\n", ignoredNoDiffPermissionCount)
 	fmt.Printf("Ignored duplicate permissions: %d\n", ignoredDuplicatePermissionCount)
+	fmt.Printf("Imported groups: %d\n", importGroupsCount)
+	fmt.Printf("Created users: %d\n", createUsersCount)
 
 	return nil
 }
 
-func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []ArtifactoryGroup) error {
+func validateRepo(
+	repo Repo,
+	allusers []ArtifactoryUser,
+	allgroups []ArtifactoryGroup,
+	importGroups bool,
+	createUsers bool) error {
+
 	if repo.Name == "" {
 		return fmt.Errorf("missing name for repo")
 	}
@@ -84,7 +96,7 @@ func validateRepo(repo Repo, allusers []ArtifactoryUser, allgroups []Artifactory
 		{repo.Manage, "manage"},
 		{repo.Scan, "scan"},
 	} {
-		errors := checkUsersAndGroups(check.values, allusers, allgroups)
+		errors := checkUsersAndGroups(check.values, allusers, allgroups, importGroups, createUsers)
 		if len(errors) > 0 {
 			for _, err := range errors {
 				fmt.Printf("'%s': Permission %s: %v\n", repo.Name, check.perm, err)
@@ -634,7 +646,13 @@ func getUsersAndGroupsPermission(
 	}
 }
 
-func checkUsersAndGroups(usersAndGroups []string, users []ArtifactoryUser, groups []ArtifactoryGroup) []error {
+func checkUsersAndGroups(
+	usersAndGroups []string,
+	users []ArtifactoryUser,
+	groups []ArtifactoryGroup,
+	importGroups bool,
+	createUsers bool) []error {
+
 	var errors []error
 
 	for _, ug := range usersAndGroups {
@@ -658,7 +676,17 @@ func checkUsersAndGroups(usersAndGroups []string, users []ArtifactoryUser, group
 		}
 
 		if !userExists && !groupExists {
-			errors = append(errors, fmt.Errorf("no user or group exists with the name: '%s'", ug))
+			if importGroups {
+				fmt.Printf("Importing group: '%s'\n", ug)
+				// todo
+				importGroupsCount++
+			} else if createUsers {
+				fmt.Printf("Creating user: '%s'\n", ug)
+				// todo
+				createUsersCount++
+			} else {
+				errors = append(errors, fmt.Errorf("no user or group exists with the name: '%s'", ug))
+			}
 		}
 	}
 

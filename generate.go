@@ -18,6 +18,7 @@ func Generate(
 	onlyGenerateMatchingRepos bool,
 	onlyGenerateCleanRepos bool,
 	combineRepos bool,
+	split bool,
 	repofile string,
 	generateyaml bool) error {
 
@@ -152,15 +153,53 @@ func Generate(
 		}
 	}
 
-	file, err := os.Create(repofile)
-	if err != nil {
-		return fmt.Errorf("error creating file: %w", err)
-	}
-	defer file.Close()
+	if !split {
+		file, err := os.Create(repofile)
+		if err != nil {
+			return fmt.Errorf("error creating file: %w", err)
+		}
+		defer file.Close()
 
-	_, err = file.Write(data)
-	if err != nil {
-		return fmt.Errorf("error saving file: %w", err)
+		_, err = file.Write(data)
+		if err != nil {
+			return fmt.Errorf("error saving file: %w", err)
+		}
+		return nil
+	}
+
+	for _, repo := range reposToSave {
+		var filename string
+		if generateyaml {
+			filename = repo.Name + ".yaml"
+			repo.Name = ""
+
+			var err error
+			data, err = yaml.Marshal(repo)
+			if err != nil {
+				return fmt.Errorf("error generating yaml: %w", err)
+			}
+		} else {
+			filename = repo.Name + ".json"
+			repo.Name = ""
+
+			var err error
+			data, err = json.MarshalIndent(repo, "", "  ")
+			if err != nil {
+				return fmt.Errorf("error generating json: %w", err)
+			}
+		}
+
+		fmt.Printf("Saving repo '%s' to file '%s'\n", repo.Names[0], filename)
+		file, err := os.Create(filename)
+		if err != nil {
+			return fmt.Errorf("error creating file: %w", err)
+		}
+		defer file.Close()
+
+		_, err = file.Write(data)
+		if err != nil {
+			return fmt.Errorf("error saving file: %w", err)
+		}
 	}
 
 	return nil
