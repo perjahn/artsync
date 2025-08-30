@@ -167,12 +167,19 @@ func Generate(
 		return nil
 	}
 
+	if _, err := os.Stat(repofile); os.IsNotExist(err) {
+		fmt.Printf("Creating folder: '%s'\n", repofile)
+		err = os.Mkdir(repofile, 0755)
+		if err != nil {
+			return fmt.Errorf("error creating folder: '%s' %w", repofile, err)
+		}
+	}
+
 	for _, repo := range reposToSave {
-		var reponame string
-		var filename string
+		var filename, reponame string
 		var data []byte
 		if generateyaml {
-			filename = repo.Name + ".yaml"
+			filename = fmt.Sprintf("%s/%s.yaml", repofile, repo.Name)
 			reponame = repo.Name
 			repo.Name = ""
 

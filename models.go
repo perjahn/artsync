@@ -30,7 +30,6 @@ type ArtifactoryPermissions struct {
 
 type ArtifactoryPermission struct {
 	Name string `json:"name"`
-	Uri  string `json:"uri"`
 }
 
 type ArtifactoryPermissionDetails struct {
@@ -150,12 +149,12 @@ type ArtifactoryLogin struct {
 }
 
 type LdapConfig struct {
-	Importgroups          bool
-	Username              string `json:"username"`
-	Password              string `json:"password"`
-	Ldapgroupsettingsname string `json:"ldapgroupsettingsname"`
-	Ldapusername          string `json:"ldapusername"`
-	Ldappassword          string `json:"ldappassword"`
-	ldapsettings          []ArtifactoryLDAPSettings
-	ldapgroupsettings     []ArtifactoryLDAPGroupSettings
+	Importgroups          bool                           `json:"-"`
+	Username              string                         `json:"username"`
+	Password              string                         `json:"password"`
+	Ldapgroupsettingsname string                         `json:"ldapgroupsettingsname"`
+	Ldapusername          string                         `json:"ldapusername"`
+	Ldappassword          string                         `json:"ldappassword"`
+	ldapsettings          []ArtifactoryLDAPSettings      `json:"-"`
+	ldapgroupsettings     []ArtifactoryLDAPGroupSettings `json:"-"`
 }
