@@ -21,7 +21,7 @@ func main() {
 	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
 	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
-	split := flag.Bool("s", false, "Split into one file for each repo, when generating (ignores combine flag and specified filename).")
+	split := flag.Bool("s", false, "Split into one file for each repo, when generating. Uses specified repofile as subfolder. Ignores combine flag.")
 	createUsers := flag.Bool("u", false, "Create missing users.")
 	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
 	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
