@@ -698,14 +698,14 @@ func checkUsersAndGroups(
 				errGroup = ImportGroup(
 					client,
 					baseurl,
-					ldapConfig.Username,
-					ldapConfig.Password,
+					ldapConfig.LdapUsername,
+					ldapConfig.LdapPassword,
 					ug,
-					ldapConfig.ldapsettings,
-					ldapConfig.ldapgroupsettings,
-					ldapConfig.Ldapgroupsettingsname,
-					ldapConfig.Ldapusername,
-					ldapConfig.Ldappassword,
+					ldapConfig.Ldapsettings,
+					ldapConfig.Ldapgroupsettings,
+					ldapConfig.Groupsettingsname,
+					ldapConfig.ArtifactoryUsername,
+					ldapConfig.ArtifactoryPassword,
 					dryRun)
 				if errGroup == nil {
 					allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
