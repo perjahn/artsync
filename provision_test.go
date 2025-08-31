@@ -124,8 +124,7 @@ func TestProvision(t *testing.T) {
 		}
 		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.allowPatterns, false, LdapConfig{}, tc.dryRun)
 		if err != nil {
-			t.Errorf("Provision (%d/%d): error = %v",
-				i, len(tests), err)
+			t.Errorf("Provision (%d/%d): error = %v", i+1, len(tests), err)
 		}
 	}
 }
