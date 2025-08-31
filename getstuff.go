@@ -22,7 +22,7 @@ func GetStuff(
 	[]ArtifactoryLDAPGroupSettings,
 	error) {
 
-	tmpfolder := "tmp"
+	tmpfolder := "cache"
 	if _, err := os.Stat(tmpfolder); os.IsNotExist(err) {
 		fmt.Printf("Creating folder: '%s'\n", tmpfolder)
 		err = os.Mkdir(tmpfolder, 0755)

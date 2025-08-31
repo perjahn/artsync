@@ -14,14 +14,14 @@ import (
 func ImportGroup(
 	client *http.Client,
 	baseurl string,
-	username string,
-	password string,
+	ldapUsername string,
+	ldapPassword string,
 	groupname string,
 	ldapsettings []ArtifactoryLDAPSettings,
 	ldapgroupsettings []ArtifactoryLDAPGroupSettings,
 	ldapgroupsettingsName string,
-	ldapusername string,
-	ldappassword string,
+	artifactoryUsername string,
+	artifactoryPassword string,
 	dryRun bool) error {
 
 	index := -1
@@ -71,8 +71,8 @@ func ImportGroup(
 		ldapsettingsSingle.LdapUrl,
 		basedn,
 		filter,
-		ldapusername,
-		ldappassword,
+		ldapUsername,
+		ldapPassword,
 		[]string{"description"},
 		false,
 		false)
@@ -104,13 +104,13 @@ func ImportGroup(
 				GroupName:      groupname,
 				Description:    description,
 				GroupDn:        groupdn,
-				RequiredUpdate: "DOES_NOT_EXIST", // Options: "DOES_NOT_EXIST", "ALWAYS", "WHEN_CHANGED"
+				RequiredUpdate: "DOES_NOT_EXIST",
 			},
 		},
 		LdapGroupSettings: ldapgroupsettingsSingle,
 	}
 
-	err = importSingleGroup(client, baseurl, username, password, groupname, importGroup, dryRun)
+	err = importSingleGroup(client, baseurl, artifactoryUsername, artifactoryPassword, groupname, importGroup, dryRun)
 	if err != nil {
 		return fmt.Errorf("import failed: %w", err)
 	}

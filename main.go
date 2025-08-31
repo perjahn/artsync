@@ -126,7 +126,7 @@ func main() {
 	}
 
 	if *generate {
-		Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, *split, repofiles[0], *generateyaml)
+		err = Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, *split, repofiles[0], *generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -150,56 +150,64 @@ func main() {
 }
 
 func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
+	empty := LdapConfig{Importgroups: false}
+
+	if len(ldapsettings) == 0 || len(ldapgroupsettings) == 0 {
+		return empty, fmt.Errorf("Error: Couldn't retrieve ldap settings from Artifactory, cannot import ldap groups: ldapsettings count: %d, ldapgroupsettings count: %d",
+			len(ldapsettings), len(ldapgroupsettings))
+	}
+
+	envLdapUsername := os.Getenv("ARTSYNC_LDAP_USERNAME")
+	envLdapPassword := os.Getenv("ARTSYNC_LDAP_PASSWORD")
+	envGroupsettingsname := os.Getenv("ARTSYNC_GROUPSETTINGSNAME")
+	envArtifactoryUsername := os.Getenv("ARTSYNC_ARTIFACTORY_USERNAME")
+	envArtifactoryPassword := os.Getenv("ARTSYNC_ARTIFACTORY_PASSWORD")
+
+	if envLdapUsername != "" && envLdapPassword != "" && envGroupsettingsname != "" && envArtifactoryUsername != "" && envArtifactoryPassword != "" {
+		return LdapConfig{
+			Importgroups:        true,
+			LdapUsername:        envLdapUsername,
+			LdapPassword:        envLdapPassword,
+			Groupsettingsname:   envGroupsettingsname,
+			ArtifactoryUsername: envArtifactoryUsername,
+			ArtifactoryPassword: envArtifactoryPassword,
+			Ldapsettings:        ldapsettings,
+			Ldapgroupsettings:   ldapgroupsettings,
+		}, nil
+	}
+
 	var ldapConfig LdapConfig
-	var empty LdapConfig
-	empty.Importgroups = false
-
-	if importLdapGroupsFilename != "" {
-		data, err := os.ReadFile(importLdapGroupsFilename)
-		if err != nil {
-			return LdapConfig{}, fmt.Errorf("Error reading ldap config file '%s': %v\n", importLdapGroupsFilename, err)
-		}
-		err = json.Unmarshal(data, &ldapConfig)
-		if err != nil {
-			return LdapConfig{}, fmt.Errorf("Error parsing ldap config file '%s': %v\n", importLdapGroupsFilename, err)
-		}
-	}
-
-	envUsername := os.Getenv("ARTSYNC_LDAP_USERNAME")
-	if envUsername != "" {
-		ldapConfig.Username = envUsername
-	}
-	envPassword := os.Getenv("ARTSYNC_LDAP_PASSWORD")
-	if envPassword != "" {
-		ldapConfig.Password = envPassword
-	}
-	envLdapgroupsettingsname := os.Getenv("ARTSYNC_LDAP_LDAPGROUPSETTINGSNAME")
-	if envLdapgroupsettingsname != "" {
-		ldapConfig.Ldapgroupsettingsname = envLdapgroupsettingsname
-	}
-	envLdapusername := os.Getenv("ARTSYNC_LDAP_LDAPUSERNAME")
-	if envLdapusername != "" {
-		ldapConfig.Ldapusername = envLdapusername
-	}
-	envLdappassword := os.Getenv("ARTSYNC_LDAP_LDAPPASSWORD")
-	if envLdappassword != "" {
-		ldapConfig.Ldappassword = envLdappassword
-	}
-
-	if ldapConfig.Username == "" || ldapConfig.Password == "" || ldapConfig.Ldapgroupsettingsname == "" || ldapConfig.Ldapusername == "" || ldapConfig.Ldappassword == "" {
-		return empty, nil
-	} else {
-		if len(ldapsettings) == 0 || len(ldapgroupsettings) == 0 {
-			return empty, fmt.Errorf("Error: Couldn't retrieve ldap settings from Artifactory, cannot import ldap groups: ldapsettings count: %d, ldapgroupsettings count: %d",
-				len(ldapsettings), len(ldapgroupsettings))
-		}
-	}
 
 	fmt.Printf("Using ldap config file: '%s'\n", importLdapGroupsFilename)
 
+	data, err := os.ReadFile(importLdapGroupsFilename)
+	if err != nil {
+		return empty, fmt.Errorf("Error reading ldap config file '%s': %v\n", importLdapGroupsFilename, err)
+	}
+	err = json.Unmarshal(data, &ldapConfig)
+	if err != nil {
+		return empty, fmt.Errorf("Error parsing ldap config file '%s': %v\n", importLdapGroupsFilename, err)
+	}
+
+	if envLdapUsername != "" {
+		ldapConfig.LdapUsername = envLdapUsername
+	}
+	if envLdapPassword != "" {
+		ldapConfig.LdapPassword = envLdapPassword
+	}
+	if envGroupsettingsname != "" {
+		ldapConfig.Groupsettingsname = envGroupsettingsname
+	}
+	if envArtifactoryUsername != "" {
+		ldapConfig.ArtifactoryUsername = envArtifactoryUsername
+	}
+	if envArtifactoryPassword != "" {
+		ldapConfig.ArtifactoryPassword = envArtifactoryPassword
+	}
+
 	ldapConfig.Importgroups = true
-	ldapConfig.ldapsettings = ldapsettings
-	ldapConfig.ldapgroupsettings = ldapgroupsettings
+	ldapConfig.Ldapsettings = ldapsettings
+	ldapConfig.Ldapgroupsettings = ldapgroupsettings
 
 	return ldapConfig, nil
 }
@@ -280,4 +288,11 @@ func usage() {
 	fmt.Println("ARTSYNC_BASEURL: Environment variable that overrides the base URL value.")
 	fmt.Println("ARTSYNC_TOKEN: Environment variable that overrides the token value.")
 	fmt.Println("ARTSYNC_REPOFILES: Environment variable that overrides the repo files value. Comma separated list of repo files.")
+	fmt.Println("")
+	fmt.Println("Environment variables for overriding values in ldap.config:")
+	fmt.Println("ARTSYNC_LDAP_USERNAME: Credentials for connecting to the LDAP server.")
+	fmt.Println("ARTSYNC_LDAP_PASSWORD: -")
+	fmt.Println("ARTSYNC_GROUPSETTINGSNAME: Selecting between multiple ldap group settings in Artifactory.")
+	fmt.Println("ARTSYNC_ARTIFACTORY_USERNAME: Credentials for connecting to the Artifactory server.")
+	fmt.Println("ARTSYNC_ARTIFACTORY_PASSWORD: -")
 }
