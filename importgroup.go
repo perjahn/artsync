@@ -1,15 +1,15 @@
 package main
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/go-ldap/ldap/v3"
 )
+
+// For mock testing.
+var queryldapImportGroupFn = queryldap
 
 func ImportGroup(
 	client *http.Client,
@@ -18,23 +18,23 @@ func ImportGroup(
 	ldapPassword string,
 	groupname string,
 	ldapsettings []ArtifactoryLDAPSettings,
-	ldapgroupsettings []ArtifactoryLDAPGroupSettings,
-	ldapgroupsettingsName string,
+	ldapGroupSettings []ArtifactoryLDAPGroupSettings,
+	ldapGroupSettingsName string,
 	artifactoryUsername string,
 	artifactoryPassword string,
 	dryRun bool) (bool, error) {
 
 	index := -1
-	for i := range ldapgroupsettings {
-		if ldapgroupsettings[i].Name == ldapgroupsettingsName {
+	for i := range ldapGroupSettings {
+		if ldapGroupSettings[i].Name == ldapGroupSettingsName {
 			index = i
 			break
 		}
 	}
 	if index == -1 {
-		return false, fmt.Errorf("LDAP group settings named '%s' not found", ldapgroupsettingsName)
+		return false, fmt.Errorf("LDAP group settings named '%s' not found", ldapGroupSettingsName)
 	}
-	ldapgroupsettingsSingle := ldapgroupsettings[index]
+	ldapgroupsettingsSingle := ldapGroupSettings[index]
 
 	index = -1
 	for i := range ldapsettings {
@@ -67,21 +67,19 @@ func ImportGroup(
 		filter = fmt.Sprintf("(%s=%s)", ldapgroupsettingsSingle.GroupNameAttribute, groupname)
 	}
 
-	entries, err := queryldap(
+	entries, err := queryldapImportGroupFn(
 		ldapsettingsSingle.LdapUrl,
 		basedn,
 		filter,
 		ldapUsername,
 		ldapPassword,
-		[]string{ldapgroupsettingsSingle.DescriptionAttribute},
-		false,
-		false)
+		[]string{ldapgroupsettingsSingle.DescriptionAttribute})
 	if err != nil {
 		return false, fmt.Errorf("query failed: %w", err)
 	}
 
 	if len(entries) < 1 {
-		fmt.Printf("Didn't find group: '%s'", groupname)
+		fmt.Printf("Didn't find group: '%s'\n", groupname)
 		return false, nil
 	}
 	if len(entries) > 1 {
@@ -117,59 +115,6 @@ func ImportGroup(
 	}
 
 	return true, nil
-}
-
-func queryldap(server, baseDN, filter, bindDN, bindPW string, attrs []string, startTLS, insecure bool) ([]*ldap.Entry, error) {
-	var l *ldap.Conn
-	var err error
-
-	if strings.HasPrefix(strings.ToLower(server), "ldaps://") {
-		l, err = ldap.DialURL(server, ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: insecure}))
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial LDAPS: %w", err)
-		}
-	} else {
-		l, err = ldap.DialURL(server)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial LDAP: %w", err)
-		}
-		if startTLS {
-			if err = l.StartTLS(&tls.Config{InsecureSkipVerify: insecure}); err != nil {
-				l.Close()
-				return nil, fmt.Errorf("StartTLS failed: %w", err)
-			}
-		}
-	}
-	defer l.Close()
-
-	if bindDN != "" {
-		if err = l.Bind(bindDN, bindPW); err != nil {
-			return nil, fmt.Errorf("bind failed: %w", err)
-		}
-	}
-
-	searchReq := ldap.NewSearchRequest(
-		baseDN,
-		ldap.ScopeWholeSubtree,
-		ldap.NeverDerefAliases,
-		0,
-		0,
-		false,
-		filter,
-		attrs,
-		nil,
-	)
-
-	sr, err := l.Search(searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	fmt.Printf("Got %d entries\n", len(sr.Entries))
-	fmt.Printf("Got %d controls\n", len(sr.Controls))
-	fmt.Printf("Got %d referrals\n", len(sr.Referrals))
-
-	return sr.Entries, nil
 }
 
 func importSingleGroup(

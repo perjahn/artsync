@@ -22,7 +22,7 @@ func main() {
 	allowpatternsFlag := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
 	onlyGenerateCleanReposFlag := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
 	splitFlag := flag.Bool("s", false, "Split into one file for each repo, when generating. Uses specified repofile as subfolder. Ignores combine flag.")
-	createUsersFlag := flag.Bool("u", false, "Create missing users.")
+	createUsersFlag := flag.Bool("u", false, "Create missing users, from ldap.")
 	overwriteFlag := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
 	generateyamlFlag := flag.Bool("y", false, "Generate output in yaml format.")
 	flag.Parse()
@@ -115,15 +115,9 @@ func main() {
 	var reposToProvision []Repo
 
 	if !generate {
-		var err error
-		reposToProvision, err = LoadRepoFiles(repofiles)
-		if err != nil {
-			fmt.Printf("Error validating repo file: %v\n", err)
-			os.Exit(1)
-		}
-
+		reposToProvision = LoadRepoFiles(repofiles)
 		if len(reposToProvision) == 0 {
-			fmt.Println("Error: No repos to provision found in the provided repo files.")
+			fmt.Println("Error: No valid repos to provision found in the provided repo files.")
 			os.Exit(1)
 		}
 	}

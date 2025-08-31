@@ -32,10 +32,7 @@ func TestLoadRepoFile_JSONArray(t *testing.T) {
 	path := writeTempFile(t, "repos-*.json", content)
 	defer os.Remove(path)
 
-	repos, err := LoadRepoFiles([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	repos := LoadRepoFiles([]string{path})
 	if len(repos) != 2 {
 		t.Fatalf("expected 2 repos, got %d", len(repos))
 	}
@@ -52,10 +49,7 @@ func TestLoadRepoFile_JSONSingleObject(t *testing.T) {
 	path := writeTempFile(t, "repo-single-*.json", content)
 	defer os.Remove(path)
 
-	repos, err := LoadRepoFiles([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	repos := LoadRepoFiles([]string{path})
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 repo, got %d", len(repos))
 	}
@@ -71,10 +65,7 @@ func TestLoadRepoFile_YAMLArray(t *testing.T) {
 	path := writeTempFile(t, "repos-*.yml", content)
 	defer os.Remove(path)
 
-	repos, err := LoadRepoFiles([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	repos := LoadRepoFiles([]string{path})
 	if len(repos) != 2 {
 		t.Fatalf("expected 2 repos, got %d", len(repos))
 	}
@@ -89,10 +80,7 @@ func TestLoadRepoFile_YAMLSingleObject(t *testing.T) {
 	path := writeTempFile(t, "repo-single-*.yaml", content)
 	defer os.Remove(path)
 
-	repos, err := LoadRepoFiles([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	repos := LoadRepoFiles([]string{path})
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 repo, got %d", len(repos))
 	}
@@ -107,10 +95,7 @@ func TestLoadRepoFile_FilenameFallback(t *testing.T) {
 	path := writeTempFile(t, "repo-fallback-*.yaml", content)
 	defer os.Remove(path)
 
-	repos, err := LoadRepoFiles([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	repos := LoadRepoFiles([]string{path})
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 repo, got %d", len(repos))
 	}
@@ -126,8 +111,8 @@ func TestLoadRepoFile_Invalid(t *testing.T) {
 	path := writeTempFile(t, "repo-bad-*.yml", content)
 	defer os.Remove(path)
 
-	_, err := LoadRepoFiles([]string{path})
-	if err != nil {
-		t.Fatalf("unexpected error for invalid content")
+	repos := LoadRepoFiles([]string{path})
+	if len(repos) != 0 {
+		t.Fatalf("unexpected non-error for invalid content")
 	}
 }

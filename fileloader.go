@@ -14,13 +14,15 @@ import (
 	"github.com/goccy/go-yaml/ast"
 )
 
-func LoadRepoFiles(repofile []string) ([]Repo, error) {
+func LoadRepoFiles(repofile []string) []Repo {
 	var allrepos []Repo
 
 	for _, repofile := range repofile {
 		repos, err := loadRepoFile(repofile)
 		if err != nil {
-			return nil, err
+			fmt.Printf("'%s': Warning: Ignoring invalid repo file: %v\n", repofile, err)
+			ignoredInvalidRepoFilesCount++
+			continue
 		}
 
 		allrepos = append(allrepos, repos...)
@@ -28,7 +30,7 @@ func LoadRepoFiles(repofile []string) ([]Repo, error) {
 
 	allrepos = removeDups(allrepos)
 
-	return allrepos, nil
+	return allrepos
 }
 
 func loadRepoFile(repofile string) ([]Repo, error) {
@@ -44,16 +46,14 @@ func loadRepoFile(repofile string) ([]Repo, error) {
 	if len(repos) == 0 || errjson != nil {
 		repos, erryaml = tryParseYamlRepos(data, repofile)
 		if erryaml != nil {
-			fmt.Printf("Warning: Ignoring unparsable json/yaml file: '%s'\n", repofile)
-			return []Repo{}, nil
+			return nil, fmt.Errorf("unparsable json/yaml file")
 		}
 	}
 
 	repos = expandRepos(repos)
 
 	if len(repos) == 0 {
-		ignoredInvalidRepoFilesCount++
-		fmt.Printf("Warning: Ignoring empty json/yaml file: '%s'\n", repofile)
+		return nil, fmt.Errorf("empty json/yaml file")
 	}
 
 	return repos, nil
@@ -95,7 +95,6 @@ func tryParseJsonRepos(data []byte, repofile string) ([]Repo, error) {
 		}
 	}
 	if len(offsets) != len(repos) {
-		ignoredInvalidRepoFilesCount++
 		return nil, fmt.Errorf("error number of repos (%d) does not match number of json objects (%d)",
 			len(repos), len(offsets))
 	}
@@ -161,7 +160,6 @@ func tryParseYamlRepos(data []byte, repofile string) ([]Repo, error) {
 		}
 	}
 	if len(positions) != len(repos) {
-		ignoredInvalidRepoFilesCount++
 		return nil, fmt.Errorf("error number of repos (%d) does not match number of yaml objects (%d)",
 			len(repos), len(positions))
 	}

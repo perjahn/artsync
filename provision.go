@@ -103,7 +103,7 @@ func validateRepo(
 		{repo.Scan, "scan"},
 	} {
 		var errs []error
-		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, check.values, allusers, allgroups, createUsers, ldapConfig, dryRun)
+		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, repo.Name, check.values, allusers, allgroups, createUsers, ldapConfig, dryRun)
 		if len(errs) > 0 {
 			for _, err := range errs {
 				fmt.Printf("'%s': Permission %s: %v\n", repo.Name, check.perm, err)
@@ -658,6 +658,7 @@ func checkUsersAndGroups(
 	client *http.Client,
 	baseurl string,
 	token string,
+	reponame string,
 	usersAndGroups []string,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
@@ -691,11 +692,11 @@ func checkUsersAndGroups(
 
 		if !userExists && !groupExists {
 			var errUser, errGroup error
-			var createdGroup bool
+			var importedGroup, createdUser bool
 
 			if importGroups {
-				fmt.Printf("Importing group: '%s'\n", ug)
-				createdGroup, errGroup = ImportGroup(
+				fmt.Printf("'%s': Importing group: '%s'\n", reponame, ug)
+				importedGroup, errGroup = ImportGroup(
 					client,
 					baseurl,
 					ldapConfig.LdapUsername,
@@ -710,18 +711,30 @@ func checkUsersAndGroups(
 				if errGroup != nil {
 					errGroup = fmt.Errorf("importing group '%s' failed: %w", ug, errGroup)
 				}
-				if errGroup == nil && createdGroup {
+				if errGroup == nil && importedGroup {
 					allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
 					importGroupsCount++
 				}
 			}
 
-			if (createUsers && importGroups && !createdGroup && errGroup == nil) || (createUsers && !importGroups) {
-				fmt.Printf("Creating user: '%s'\n", ug)
-				errUser = createUser(client, baseurl, token, ug, dryRun)
-				if errUser == nil {
+			if createUsers && !importedGroup {
+				fmt.Printf("'%s': Creating user: '%s'\n", reponame, ug)
+				createdUser, errUser = CreateUser(
+					client,
+					baseurl,
+					token,
+					ldapConfig.LdapUsername,
+					ldapConfig.LdapPassword,
+					ug,
+					ldapConfig.Ldapsettings,
+					ldapConfig.Ldapgroupsettings,
+					ldapConfig.Groupsettingsname,
+					dryRun)
+				if errUser != nil {
+					errUser = fmt.Errorf("creating user '%s' failed: %w", ug, errUser)
+				}
+				if errUser == nil && createdUser {
 					allusers = append(allusers, ArtifactoryUser{Username: ug})
-					errGroup = nil
 					createUsersCount++
 				}
 			}
@@ -734,63 +747,6 @@ func checkUsersAndGroups(
 	}
 
 	return allusers, allgroups, errs
-}
-
-func createUser(
-	client *http.Client,
-	baseurl string,
-	token string,
-	username string,
-	dryRun bool) error {
-
-	url := fmt.Sprintf("%s/access/api/v2/users", baseurl)
-
-	var email string
-	if at := strings.Index(username, "@"); at != -1 {
-		email = username
-	} else {
-		email = fmt.Sprintf("%s@example.com", username)
-	}
-
-	artifactoryUserRequest := ArtifactoryUserRequest{
-		Username:                 username,
-		Email:                    email,
-		InternalPasswordDisabled: true,
-	}
-
-	json, err := json.Marshal(artifactoryUserRequest)
-
-	if err != nil {
-		return fmt.Errorf("error creating user, error generating json: %w", err)
-	}
-	req, err := http.NewRequest("POST", url, strings.NewReader(string(json)))
-	if err != nil {
-		return fmt.Errorf("error creating user, error creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	if !dryRun {
-		resp, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("error creating user: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 201 {
-			fmt.Printf("Username: '%s'\n", username)
-			fmt.Printf("Url: '%s'\n", url)
-			fmt.Printf("Unexpected status: '%s'\n", resp.Status)
-			fmt.Printf("Request body: '%s'\n", req.Body)
-			body, _ := io.ReadAll(resp.Body)
-			fmt.Printf("Response body: '%s'\n", body)
-			return fmt.Errorf("error creating user")
-		} else {
-			fmt.Printf("'%s': Created user successfully.\n", username)
-		}
-	}
-
-	return nil
 }
 
 func isValidRepoName(s string) bool {
