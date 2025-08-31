@@ -12,21 +12,35 @@ import (
 )
 
 func main() {
-	useAllPermissionTargetsAsSource := flag.Bool("a", false, "Use all permission targets as source, when generating.")
-	combineRepos := flag.Bool("c", false, "Combine identical repos, when generating.")
-	dryRun := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
-	generate := flag.Bool("g", false, "Generate repo file.")
-	ignoreCert := flag.Bool("k", false, "Ignore https cert validation errors.")
-	importLdapGroupsFilename := flag.String("l", "", "Import missing groups from ldap. Argument specifies an ldap configuration file.")
-	onlyGenerateMatchingRepos := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
-	allowpatterns := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
-	onlyGenerateCleanRepos := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
-	split := flag.Bool("s", false, "Split into one file for each repo, when generating. Uses specified repofile as subfolder. Ignores combine flag.")
-	createUsers := flag.Bool("u", false, "Create missing users.")
-	overwrite := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
-	generateyaml := flag.Bool("y", false, "Generate output in yaml format.")
-
+	useAllPermissionTargetsAsSourceFlag := flag.Bool("a", false, "Use all permission targets as source, when generating.")
+	combineReposFlag := flag.Bool("c", false, "Combine identical repos, when generating.")
+	dryRunFlag := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
+	generateFlag := flag.Bool("g", false, "Generate repo file.")
+	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
+	importLdapGroupsFilenameFlag := flag.String("l", "", "Import missing groups from ldap. Argument specifies an ldap configuration file.")
+	onlyGenerateMatchingReposFlag := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
+	allowpatternsFlag := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
+	onlyGenerateCleanReposFlag := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
+	splitFlag := flag.Bool("s", false, "Split into one file for each repo, when generating. Uses specified repofile as subfolder. Ignores combine flag.")
+	createUsersFlag := flag.Bool("u", false, "Create missing users.")
+	overwriteFlag := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
+	generateyamlFlag := flag.Bool("y", false, "Generate output in yaml format.")
 	flag.Parse()
+
+	useAllPermissionTargetsAsSource := getFlagEnv(*useAllPermissionTargetsAsSourceFlag, "ARTSYNC_USE_ALL_PERMISSIONS")
+	combineRepos := getFlagEnv(*combineReposFlag, "ARTSYNC_COMBINE_REPOS")
+	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN")
+	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE")
+	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT")
+	importLdapGroupsFilename := getStringEnv(*importLdapGroupsFilenameFlag, "ARTSYNC_IMPORT_LDAP_GROUPS_FILENAME")
+	onlyGenerateMatchingRepos := getFlagEnv(*onlyGenerateMatchingReposFlag, "ARTSYNC_ONLY_GENERATE_MATCHING")
+	allowpatterns := getFlagEnv(*allowpatternsFlag, "ARTSYNC_ALLOW_PATTERNS")
+	onlyGenerateCleanRepos := getFlagEnv(*onlyGenerateCleanReposFlag, "ARTSYNC_ONLY_GENERATE_CLEAN_REPOS")
+	split := getFlagEnv(*splitFlag, "ARTSYNC_SPLIT")
+	createUsers := getFlagEnv(*createUsersFlag, "ARTSYNC_CREATE_USERS")
+	overwrite := getFlagEnv(*overwriteFlag, "ARTSYNC_OVERWRITE")
+	generateyaml := getFlagEnv(*generateyamlFlag, "ARTSYNC_GENERATE_YAML")
+
 	args := flag.Args()
 	if len(args) < 3 || args[0] == "" || args[1] == "" || args[2] == "" {
 		usage()
@@ -37,41 +51,41 @@ func main() {
 	token := getToken(args[1])
 	repofiles := getRepoFiles(args[2:])
 
-	if *generate && len(repofiles) > 1 {
+	if generate && len(repofiles) > 1 {
 		fmt.Println("Error: Only one repo file is allowed when using -g flag.")
 		os.Exit(1)
 	}
 
-	if !*generate && *useAllPermissionTargetsAsSource {
+	if !generate && useAllPermissionTargetsAsSource {
 		fmt.Println("Error: -a flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
-	if !*generate && *combineRepos {
+	if !generate && combineRepos {
 		fmt.Println("Error: -c flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
-	if !*generate && *onlyGenerateMatchingRepos {
+	if !generate && onlyGenerateMatchingRepos {
 		fmt.Println("Error: -m flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
-	if !*generate && *onlyGenerateCleanRepos {
+	if !generate && onlyGenerateCleanRepos {
 		fmt.Println("Error: -q flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
-	if !*generate && *overwrite {
+	if !generate && overwrite {
 		fmt.Println("Error: -w flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
-	if !*generate && *split {
+	if !generate && split {
 		fmt.Println("Error: -s flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
-	if !*generate && *generateyaml {
+	if !generate && generateyaml {
 		fmt.Println("Error: -y flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 
-	if !*generate {
+	if !generate {
 		success := true
 		for _, repofile := range repofiles {
 			if _, err := os.Stat(repofile); os.IsNotExist(err) {
@@ -84,7 +98,7 @@ func main() {
 		}
 	}
 
-	if *generate && !*overwrite {
+	if generate && !overwrite {
 		if _, err := os.Stat(repofiles[0]); err == nil {
 			fmt.Printf("Error: File already exists, will not overwrite: '%s'\n", repofiles[0])
 			os.Exit(1)
@@ -92,7 +106,7 @@ func main() {
 	}
 
 	client := &http.Client{}
-	if *ignoreCert {
+	if ignoreCert {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
@@ -100,7 +114,7 @@ func main() {
 
 	var reposToProvision []Repo
 
-	if !*generate {
+	if !generate {
 		var err error
 		reposToProvision, err = LoadRepoFiles(repofiles)
 		if err != nil {
@@ -115,7 +129,7 @@ func main() {
 	}
 
 	var retrieveldapsettings = false
-	if *importLdapGroupsFilename != "" {
+	if importLdapGroupsFilename != "" {
 		retrieveldapsettings = true
 	}
 
@@ -125,28 +139,47 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *generate {
-		err = Generate(repos, permissiondetails, *useAllPermissionTargetsAsSource, *onlyGenerateMatchingRepos, *onlyGenerateCleanRepos, *combineRepos, *split, repofiles[0], *generateyaml)
+	if generate {
+		err = Generate(repos, permissiondetails, useAllPermissionTargetsAsSource, onlyGenerateMatchingRepos, onlyGenerateCleanRepos, combineRepos, split, repofiles[0], generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
 		var ldapConfig LdapConfig
-		if *importLdapGroupsFilename != "" {
-			ldapConfig, err = loadLdapConfig(*importLdapGroupsFilename, ldapsettings, ldapgroupsettings)
+		if importLdapGroupsFilename != "" {
+			ldapConfig, err = loadLdapConfig(importLdapGroupsFilename, ldapsettings, ldapgroupsettings)
 			if err != nil {
 				fmt.Printf("Error reading ldap config: %v\n", err)
 				os.Exit(1)
 			}
 		}
 
-		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, *allowpatterns, *createUsers, ldapConfig, *dryRun)
+		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, allowpatterns, createUsers, ldapConfig, dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
 		}
 	}
+}
+
+func getFlagEnv(value bool, envname string) bool {
+	envValue := strings.TrimSpace(os.Getenv(envname))
+	if envValue == "1" || strings.EqualFold(envValue, "true") {
+		return true
+	}
+	if envValue == "0" || strings.EqualFold(envValue, "false") {
+		return false
+	}
+	return value
+}
+
+func getStringEnv(value string, envname string) string {
+	envValue := strings.TrimSpace(os.Getenv(envname))
+	if envValue != "" {
+		return envValue
+	}
+	return value
 }
 
 func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
