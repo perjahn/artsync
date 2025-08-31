@@ -22,7 +22,7 @@ func ImportGroup(
 	ldapgroupsettingsName string,
 	artifactoryUsername string,
 	artifactoryPassword string,
-	dryRun bool) error {
+	dryRun bool) (bool, error) {
 
 	index := -1
 	for i := range ldapgroupsettings {
@@ -32,7 +32,7 @@ func ImportGroup(
 		}
 	}
 	if index == -1 {
-		return fmt.Errorf("LDAP group settings named '%s' not found", ldapgroupsettingsName)
+		return false, fmt.Errorf("LDAP group settings named '%s' not found", ldapgroupsettingsName)
 	}
 	ldapgroupsettingsSingle := ldapgroupsettings[index]
 
@@ -44,7 +44,7 @@ func ImportGroup(
 		}
 	}
 	if index == -1 {
-		return fmt.Errorf("LDAP settings named '%s' not found", ldapgroupsettingsSingle.EnabledLdap)
+		return false, fmt.Errorf("LDAP settings named '%s' not found", ldapgroupsettingsSingle.EnabledLdap)
 	}
 	ldapsettingsSingle := ldapsettings[index]
 
@@ -73,25 +73,26 @@ func ImportGroup(
 		filter,
 		ldapUsername,
 		ldapPassword,
-		[]string{"description"},
+		[]string{ldapgroupsettingsSingle.DescriptionAttribute},
 		false,
 		false)
 	if err != nil {
-		return fmt.Errorf("query failed: %w", err)
+		return false, fmt.Errorf("query failed: %w", err)
 	}
 
 	if len(entries) < 1 {
-		return fmt.Errorf("error: didn't find group: '%s'", groupname)
+		fmt.Printf("Didn't find group: '%s'", groupname)
+		return false, nil
 	}
 	if len(entries) > 1 {
-		return fmt.Errorf("error: multiple DNs found for group: '%s'", groupname)
+		return false, fmt.Errorf("error: multiple DNs found for group: '%s'", groupname)
 	}
 	entry := entries[0]
 
 	groupdn := entry.DN
 	fmt.Printf("groupdn: '%s'\n", groupdn)
 
-	values := entry.GetAttributeValues("description")
+	values := entry.GetAttributeValues(ldapgroupsettingsSingle.DescriptionAttribute)
 	description := ""
 	if len(values) >= 1 {
 		description = values[0]
@@ -112,10 +113,10 @@ func ImportGroup(
 
 	err = importSingleGroup(client, baseurl, artifactoryUsername, artifactoryPassword, groupname, importGroup, dryRun)
 	if err != nil {
-		return fmt.Errorf("import failed: %w", err)
+		return false, fmt.Errorf("import failed: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
 func queryldap(server, baseDN, filter, bindDN, bindPW string, attrs []string, startTLS, insecure bool) ([]*ldap.Entry, error) {

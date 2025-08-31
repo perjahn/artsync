@@ -690,12 +690,12 @@ func checkUsersAndGroups(
 		}
 
 		if !userExists && !groupExists {
-			var errGroup error
-			var errUser error
+			var errUser, errGroup error
+			var createdGroup bool
 
 			if importGroups {
 				fmt.Printf("Importing group: '%s'\n", ug)
-				errGroup = ImportGroup(
+				createdGroup, errGroup = ImportGroup(
 					client,
 					baseurl,
 					ldapConfig.LdapUsername,
@@ -707,13 +707,16 @@ func checkUsersAndGroups(
 					ldapConfig.ArtifactoryUsername,
 					ldapConfig.ArtifactoryPassword,
 					dryRun)
-				if errGroup == nil {
+				if errGroup != nil {
+					errGroup = fmt.Errorf("importing group '%s' failed: %w", ug, errGroup)
+				}
+				if errGroup == nil && createdGroup {
 					allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
 					importGroupsCount++
 				}
 			}
 
-			if (createUsers && importGroups && errGroup != nil) || (createUsers && !importGroups) {
+			if (createUsers && importGroups && !createdGroup && errGroup == nil) || (createUsers && !importGroups) {
 				fmt.Printf("Creating user: '%s'\n", ug)
 				errUser = createUser(client, baseurl, token, ug, dryRun)
 				if errUser == nil {
