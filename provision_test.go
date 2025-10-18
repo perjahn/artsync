@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,7 +50,7 @@ func TestProvisionSimple(t *testing.T) {
 	}
 	for i, tc := range tests {
 		var client *http.Client
-		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.allowPatterns, LdapConfig{}, tc.dryRun)
+		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, LdapConfig{}, tc.dryRun)
 		if err != nil {
 			t.Errorf("ProvisionSimple (%d/%d): error = %v", i+1, len(tests), err)
 		}
@@ -97,6 +98,7 @@ func TestProvisionPermissions(t *testing.T) {
 						},
 					},
 				},
+				JsonSource: `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["OTHER","READ","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`,
 			},
 		},
 		false,
@@ -119,9 +121,24 @@ func TestProvisionPermissions(t *testing.T) {
 		return reponse, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.allowPatterns, LdapConfig{}, tc.dryRun)
+	var out bytes.Buffer
+
+	origGetWriterFn := GetWriterFn
+	defer func() { GetWriterFn = origGetWriterFn }()
+
+	GetWriterFn = func() io.Writer {
+		return &out
+	}
+
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionPermissions: error = %v", err)
+	}
+
+	consoleDiffOutput := "+         \"MANAGE\",\n+         \"SCAN\",\n"
+	got := out.String()
+	if strings.TrimSpace(got) != strings.TrimSpace(consoleDiffOutput) {
+		t.Errorf("ProvisionPermissions: console output mismatch\n got: %q\nwant: %q", got, consoleDiffOutput)
 	}
 }
 
@@ -290,7 +307,7 @@ func TestProvisionLdap(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.allowPatterns, ldapConfig, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
 	}
@@ -449,7 +466,7 @@ func TestProvisionLdapFail(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.allowPatterns, ldapConfig, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
 	}
