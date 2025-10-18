@@ -53,8 +53,8 @@ func CreateUser(
 	var entries []*ldap.Entry
 	var err error
 
-	basednParts := strings.Split(ldapSettingsSingle.Search.SearchBase, "|")
-	for _, basednPart := range basednParts {
+	basednParts := strings.SplitSeq(ldapSettingsSingle.Search.SearchBase, "|")
+	for basednPart := range basednParts {
 		var basedn string
 
 		if strings.Count(ldapSettingsSingle.LdapUrl, "/") >= 3 {
@@ -105,15 +105,15 @@ func CreateUser(
 	}
 	fmt.Printf("emailaddress: '%s'\n", emailaddress)
 
-	err = importSingleUser(client, baseurl, token, username, emailaddress, dryRun)
+	err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
 	if err != nil {
-		return false, fmt.Errorf("import failed: %w", err)
+		return false, fmt.Errorf("creating failed: %w", err)
 	}
 
 	return true, nil
 }
 
-func importSingleUser(client *http.Client, baseurl, token, username, emailaddress string, dryRun bool) error {
+func createSingleUser(client *http.Client, baseurl, token, username, emailaddress string, dryRun bool) error {
 	url := fmt.Sprintf("%s/access/api/v2/users", baseurl)
 
 	artifactoryUserRequest := ArtifactoryUserRequest{

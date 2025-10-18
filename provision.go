@@ -31,14 +31,13 @@ func Provision(
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
 	allowpatterns bool,
-	createUsers bool,
 	ldapConfig LdapConfig,
 	dryRun bool) error {
 
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
 	for _, repo := range reposToProvision {
 		var err error
-		allusers, allgroups, err = validateRepo(client, baseurl, token, repo, allusers, allgroups, createUsers, ldapConfig, dryRun)
+		allusers, allgroups, err = validateRepo(client, baseurl, token, repo, allusers, allgroups, ldapConfig, dryRun)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 			ignoredInvalidRepoCount++
@@ -77,7 +76,6 @@ func validateRepo(
 	repo Repo,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
-	createUsers bool,
 	ldapConfig LdapConfig,
 	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, error) {
 
@@ -92,8 +90,8 @@ func validateRepo(
 	hasErrors := false
 
 	for _, check := range []struct {
-		values []string
-		perm   string
+		usersAndGroups []string
+		perm           string
 	}{
 		{repo.Read, "read"},
 		{repo.Annotate, "annotate"},
@@ -103,7 +101,7 @@ func validateRepo(
 		{repo.Scan, "scan"},
 	} {
 		var errs []error
-		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, repo.Name, check.values, allusers, allgroups, createUsers, ldapConfig, dryRun)
+		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, repo.Name, check.usersAndGroups, allusers, allgroups, ldapConfig, dryRun)
 		if len(errs) > 0 {
 			for _, err := range errs {
 				fmt.Printf("'%s': Permission %s: %v\n", repo.Name, check.perm, err)
@@ -662,12 +660,13 @@ func checkUsersAndGroups(
 	usersAndGroups []string,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
-	createUsers bool,
 	ldapConfig LdapConfig,
 	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, []error) {
 
 	var errs []error
-	importGroups := ldapConfig.Importgroups
+
+	createUsers := ldapConfig.CreateUsers
+	importGroups := ldapConfig.ImportGroups
 
 	for _, ug := range usersAndGroups {
 		userExists := false
@@ -690,8 +689,12 @@ func checkUsersAndGroups(
 			continue
 		}
 
+		if userExists || groupExists {
+			fmt.Printf("user or group exists with the name: '%s'\n", ug)
+		}
+
 		if !userExists && !groupExists {
-			var errUser, errGroup error
+			var errGroup, errUser error
 			var importedGroup, createdUser bool
 
 			if importGroups {
@@ -739,7 +742,7 @@ func checkUsersAndGroups(
 				}
 			}
 
-			if errGroup != nil || errUser != nil {
+			if errGroup != nil || errUser != nil || (!createdUser && !importedGroup) {
 				joined := errors.Join(errGroup, errUser)
 				errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s': %w", ug, joined))
 			}

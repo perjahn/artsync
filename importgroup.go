@@ -78,6 +78,8 @@ func ImportGroup(
 		return false, fmt.Errorf("query failed: %w", err)
 	}
 
+	fmt.Printf("Entries: %d\n", len(entries))
+
 	if len(entries) < 1 {
 		fmt.Printf("Didn't find group: '%s'\n", groupname)
 		return false, nil
@@ -126,7 +128,7 @@ func importSingleGroup(
 	groupimport ArtifactoryGroupImport,
 	dryRun bool) error {
 
-	fmt.Printf("Importing group: %s\n", groupname)
+	fmt.Printf("Importing group: '%s'\n", groupname)
 
 	accessToken, refreshToken, err := getUITokens(client, baseurl, username, password)
 	if err != nil {
@@ -164,7 +166,7 @@ func importSingleGroup(
 			return fmt.Errorf("unexpected response from '%s': %s - %s", url, resp.Status, string(body))
 		}
 
-		fmt.Printf("Created group '%s' via '%s' (status %s)\n", groupname, url, resp.Status)
+		fmt.Printf("Created group '%s' via '%s' (status '%s', code %d)\n", groupname, url, resp.Status, resp.StatusCode)
 	}
 
 	return nil
@@ -195,6 +197,8 @@ func getUITokens(client *http.Client, baseurl string, username string, password 
 	if err != nil {
 		return "", "", fmt.Errorf("error sending request to '%s': %w", url, err)
 	}
+
+	fmt.Printf("Status: '%s' %d\n", resp.Status, resp.StatusCode)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
