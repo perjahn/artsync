@@ -17,7 +17,7 @@ func main() {
 	dryRunFlag := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
 	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
-	importLdapGroupsFilenameFlag := flag.String("l", "", "Import missing groups from ldap. Argument specifies an ldap configuration file.")
+	importGroupsFlag := flag.Bool("l", false, "Import missing groups from ldap.")
 	onlyGenerateMatchingReposFlag := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatternsFlag := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
 	onlyGenerateCleanReposFlag := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
@@ -32,7 +32,7 @@ func main() {
 	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN")
 	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE")
 	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT")
-	importLdapGroupsFilename := getStringEnv(*importLdapGroupsFilenameFlag, "ARTSYNC_IMPORT_LDAP_GROUPS_FILENAME")
+	importGroups := getFlagEnv(*importGroupsFlag, "ARTSYNC_IMPORT_LDAP_GROUPS_FILENAME")
 	onlyGenerateMatchingRepos := getFlagEnv(*onlyGenerateMatchingReposFlag, "ARTSYNC_ONLY_GENERATE_MATCHING")
 	allowpatterns := getFlagEnv(*allowpatternsFlag, "ARTSYNC_ALLOW_PATTERNS")
 	onlyGenerateCleanRepos := getFlagEnv(*onlyGenerateCleanReposFlag, "ARTSYNC_ONLY_GENERATE_CLEAN_REPOS")
@@ -123,7 +123,7 @@ func main() {
 	}
 
 	var retrieveldapsettings = false
-	if importLdapGroupsFilename != "" {
+	if createUsers || importGroups {
 		retrieveldapsettings = true
 	}
 
@@ -141,15 +141,15 @@ func main() {
 		}
 	} else {
 		var ldapConfig LdapConfig
-		if importLdapGroupsFilename != "" {
-			ldapConfig, err = loadLdapConfig(importLdapGroupsFilename, ldapsettings, ldapgroupsettings)
+		if importGroups {
+			ldapConfig, err = loadLdapConfig(createUsers, importGroups, "ldap.config", ldapsettings, ldapgroupsettings)
 			if err != nil {
 				fmt.Printf("Error reading ldap config: %v\n", err)
 				os.Exit(1)
 			}
 		}
 
-		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, allowpatterns, createUsers, ldapConfig, dryRun)
+		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, allowpatterns, ldapConfig, dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
@@ -168,16 +168,8 @@ func getFlagEnv(value bool, envname string) bool {
 	return value
 }
 
-func getStringEnv(value string, envname string) string {
-	envValue := strings.TrimSpace(os.Getenv(envname))
-	if envValue != "" {
-		return envValue
-	}
-	return value
-}
-
-func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
-	empty := LdapConfig{Importgroups: false}
+func loadLdapConfig(createUsers bool, importGroups bool, configFile string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
+	empty := LdapConfig{CreateUsers: false, ImportGroups: false}
 
 	if len(ldapsettings) == 0 || len(ldapgroupsettings) == 0 {
 		return empty, fmt.Errorf("Error: Couldn't retrieve ldap settings from Artifactory, cannot import ldap groups: ldapsettings count: %d, ldapgroupsettings count: %d",
@@ -192,7 +184,8 @@ func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryL
 
 	if envLdapUsername != "" && envLdapPassword != "" && envGroupsettingsname != "" && envArtifactoryUsername != "" && envArtifactoryPassword != "" {
 		return LdapConfig{
-			Importgroups:        true,
+			CreateUsers:         createUsers,
+			ImportGroups:        importGroups,
 			LdapUsername:        envLdapUsername,
 			LdapPassword:        envLdapPassword,
 			Groupsettingsname:   envGroupsettingsname,
@@ -205,15 +198,15 @@ func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryL
 
 	var ldapConfig LdapConfig
 
-	fmt.Printf("Using ldap config file: '%s'\n", importLdapGroupsFilename)
+	fmt.Printf("Using ldap config file: '%s'\n", configFile)
 
-	data, err := os.ReadFile(importLdapGroupsFilename)
+	data, err := os.ReadFile(configFile)
 	if err != nil {
-		return empty, fmt.Errorf("Error reading ldap config file '%s': %v\n", importLdapGroupsFilename, err)
+		return empty, fmt.Errorf("Error reading ldap config file '%s': %v\n", configFile, err)
 	}
 	err = json.Unmarshal(data, &ldapConfig)
 	if err != nil {
-		return empty, fmt.Errorf("Error parsing ldap config file '%s': %v\n", importLdapGroupsFilename, err)
+		return empty, fmt.Errorf("Error parsing ldap config file '%s': %v\n", configFile, err)
 	}
 
 	if envLdapUsername != "" {
@@ -232,7 +225,8 @@ func loadLdapConfig(importLdapGroupsFilename string, ldapsettings []ArtifactoryL
 		ldapConfig.ArtifactoryPassword = envArtifactoryPassword
 	}
 
-	ldapConfig.Importgroups = true
+	ldapConfig.CreateUsers = createUsers
+	ldapConfig.ImportGroups = importGroups
 	ldapConfig.Ldapsettings = ldapsettings
 	ldapConfig.Ldapgroupsettings = ldapgroupsettings
 
@@ -304,7 +298,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-l ldap.config] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

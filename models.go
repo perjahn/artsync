@@ -149,7 +149,8 @@ type ArtifactoryLogin struct {
 }
 
 type LdapConfig struct {
-	Importgroups        bool                           `json:"-"`
+	CreateUsers         bool                           `json:"-"`
+	ImportGroups        bool                           `json:"-"`
 	LdapUsername        string                         `json:"ldapusername"`
 	LdapPassword        string                         `json:"ldappassword"`
 	Groupsettingsname   string                         `json:"ldapgroupsettingsname"`
