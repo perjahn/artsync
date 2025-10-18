@@ -33,8 +33,9 @@ type ArtifactoryPermission struct {
 }
 
 type ArtifactoryPermissionDetails struct {
-	Name      string                                `json:"name"`
-	Resources ArtifactoryPermissionDetailsResources `json:"resources"`
+	Name       string                                `json:"name"`
+	Resources  ArtifactoryPermissionDetailsResources `json:"resources"`
+	JsonSource string                                `json:"-"`
 }
 
 type ArtifactoryPermissionDetailsResources struct {

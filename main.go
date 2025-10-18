@@ -15,6 +15,7 @@ func main() {
 	useAllPermissionTargetsAsSourceFlag := flag.Bool("a", false, "Use all permission targets as source, when generating.")
 	combineReposFlag := flag.Bool("c", false, "Combine identical repos, when generating.")
 	dryRunFlag := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
+	showDiffFlag := flag.Bool("f", false, "Show json diff, when applying permission targets.")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
 	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
 	importGroupsFlag := flag.Bool("l", false, "Import missing groups from ldap.")
@@ -30,6 +31,7 @@ func main() {
 	useAllPermissionTargetsAsSource := getFlagEnv(*useAllPermissionTargetsAsSourceFlag, "ARTSYNC_USE_ALL_PERMISSIONS")
 	combineRepos := getFlagEnv(*combineReposFlag, "ARTSYNC_COMBINE_REPOS")
 	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN")
+	showDiff := getFlagEnv(*showDiffFlag, "ARTSYNC_SHOW_DIFF")
 	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE")
 	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT")
 	importGroups := getFlagEnv(*importGroupsFlag, "ARTSYNC_IMPORT_LDAP_GROUPS_FILENAME")
@@ -122,7 +124,7 @@ func main() {
 		}
 	}
 
-	var retrieveldapsettings = false
+	retrieveldapsettings := false
 	if createUsers || importGroups {
 		retrieveldapsettings = true
 	}
@@ -141,7 +143,7 @@ func main() {
 		}
 	} else {
 		var ldapConfig LdapConfig
-		if importGroups {
+		if retrieveldapsettings {
 			ldapConfig, err = loadLdapConfig(createUsers, importGroups, "ldap.config", ldapsettings, ldapgroupsettings)
 			if err != nil {
 				fmt.Printf("Error reading ldap config: %v\n", err)
@@ -149,7 +151,7 @@ func main() {
 			}
 		}
 
-		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, allowpatterns, ldapConfig, dryRun)
+		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
@@ -298,7 +300,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-f] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

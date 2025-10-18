@@ -30,6 +30,7 @@ func Provision(
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
+	showDiff bool,
 	allowpatterns bool,
 	ldapConfig LdapConfig,
 	dryRun bool) error {
@@ -47,7 +48,7 @@ func Provision(
 				fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 				ignoredInvalidRepoCount++
 			} else {
-				err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, allowpatterns, dryRun)
+				err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, showDiff, allowpatterns, dryRun)
 				if err != nil {
 					fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
 					ignoredInvalidPermissionCount++
@@ -319,6 +320,7 @@ func provisionPermissionTarget(
 	repo Repo,
 	allusers []ArtifactoryUser,
 	allpermissiondetails []ArtifactoryPermissionDetails,
+	showDiff bool,
 	allowpatterns bool,
 	dryRun bool) error {
 
@@ -354,7 +356,7 @@ func provisionPermissionTarget(
 
 			fmt.Printf("'%s': Permission target already exists, updating...\n", repo.Name)
 
-			updateExistingPermission(client, baseurl, token, repo, users, groups, existingPermission, dryRun)
+			updateExistingPermission(client, baseurl, token, repo, users, groups, existingPermission, showDiff, dryRun)
 		}
 	} else {
 		fmt.Printf("'%s': Permission target does not exist, creating...\n", repo.Name)
@@ -373,6 +375,7 @@ func updateExistingPermission(
 	users map[string][]string,
 	groups map[string][]string,
 	existingPermission *ArtifactoryPermissionDetails,
+	showDiff bool,
 	dryRun bool) error {
 
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Users, users) {
@@ -385,7 +388,10 @@ func updateExistingPermission(
 	url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, repo.Name)
 
 	targets := make(map[string]ArtifactoryPermissionDetailsTarget)
-	targets[repo.Name] = ArtifactoryPermissionDetailsTarget{}
+	targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
+		existingPermission.Resources.Artifact.Targets[repo.Name].IncludePatterns,
+		existingPermission.Resources.Artifact.Targets[repo.Name].ExcludePatterns,
+	}
 
 	artifactorypermissiontarget := ArtifactoryPermissionDetailsArtifact{
 		Actions: ArtifactoryPermissionDetailsActions{
@@ -406,6 +412,11 @@ func updateExistingPermission(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+
+	if showDiff {
+		artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
+		PrintDiff(artifactjsonsource, string(json))
+	}
 
 	if !dryRun {
 		resp, err := client.Do(req)

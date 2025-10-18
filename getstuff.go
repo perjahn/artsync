@@ -464,6 +464,7 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 		if err != nil {
 			return nil, fmt.Errorf("error parsing response body: %w", err)
 		}
+		permissiondetails.JsonSource = string(body)
 
 		allpermissiondetails = append(allpermissiondetails, permissiondetails)
 	}
