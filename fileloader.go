@@ -14,11 +14,11 @@ import (
 	"github.com/goccy/go-yaml/ast"
 )
 
-func LoadRepoFiles(repofile []string) []Repo {
+func LoadRepoFiles(repofiles []string, provisionEmpty bool) []Repo {
 	var allrepos []Repo
 
-	for _, repofile := range repofile {
-		repos, err := loadRepoFile(repofile)
+	for _, repofile := range repofiles {
+		repos, err := loadRepoFile(repofile, provisionEmpty)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring invalid repo file: %v\n", repofile, err)
 			ignoredInvalidRepoFilesCount++
@@ -33,7 +33,7 @@ func LoadRepoFiles(repofile []string) []Repo {
 	return allrepos
 }
 
-func loadRepoFile(repofile string) ([]Repo, error) {
+func loadRepoFile(repofile string, provisionEmpty bool) ([]Repo, error) {
 	data, err := os.ReadFile(repofile)
 	if err != nil {
 		return nil, fmt.Errorf("error reading file: %w", err)
@@ -42,9 +42,9 @@ func loadRepoFile(repofile string) ([]Repo, error) {
 	var repos []Repo
 	var errjson, erryaml error
 
-	repos, errjson = tryParseJsonRepos(data, repofile)
+	repos, errjson = tryParseJsonRepos(data, repofile, provisionEmpty)
 	if len(repos) == 0 || errjson != nil {
-		repos, erryaml = tryParseYamlRepos(data, repofile)
+		repos, erryaml = tryParseYamlRepos(data, repofile, provisionEmpty)
 		if erryaml != nil {
 			return nil, fmt.Errorf("unparsable json/yaml file")
 		}
@@ -59,7 +59,7 @@ func loadRepoFile(repofile string) ([]Repo, error) {
 	return repos, nil
 }
 
-func tryParseJsonRepos(data []byte, repofile string) ([]Repo, error) {
+func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Repo, error) {
 	var repos []Repo
 
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
@@ -80,7 +80,19 @@ func tryParseJsonRepos(data []byte, repofile string) ([]Repo, error) {
 	}
 
 	if len(repos) == 0 {
-		return repos, nil
+		if provisionEmpty {
+			var onerepo Repo
+			b := filepath.Base(repofile)
+			onerepo.Name = strings.TrimSuffix(b, filepath.Ext(b))
+
+			onerepo.SourceFile = repofile
+			onerepo.SourceOffset = 1
+			onerepo.SourceLine = 1
+
+			return []Repo{onerepo}, nil
+		} else {
+			return repos, nil
+		}
 	}
 
 	decoder = json.NewDecoder(strings.NewReader(string(data)))
@@ -116,7 +128,7 @@ func tryParseJsonRepos(data []byte, repofile string) ([]Repo, error) {
 	return repos, nil
 }
 
-func tryParseYamlRepos(data []byte, repofile string) ([]Repo, error) {
+func tryParseYamlRepos(data []byte, repofile string, provisionEmpty bool) ([]Repo, error) {
 	var repos []Repo
 
 	erryaml := yaml.Unmarshal(data, &repos)
@@ -133,8 +145,21 @@ func tryParseYamlRepos(data []byte, repofile string) ([]Repo, error) {
 
 		return []Repo{onerepo}, nil
 	}
+
 	if len(repos) == 0 {
-		return repos, nil
+		if provisionEmpty {
+			var onerepo Repo
+			b := filepath.Base(repofile)
+			onerepo.Name = strings.TrimSuffix(b, filepath.Ext(b))
+
+			onerepo.SourceFile = repofile
+			onerepo.SourceOffset = 1
+			onerepo.SourceLine = 1
+
+			return []Repo{onerepo}, nil
+		} else {
+			return repos, nil
+		}
 	}
 
 	var node ast.Node

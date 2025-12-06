@@ -32,7 +32,7 @@ func TestLoadRepoFile_JSONArray(t *testing.T) {
 	path := writeTempFile(t, "repos-*.json", content)
 	defer os.Remove(path)
 
-	repos := LoadRepoFiles([]string{path})
+	repos := LoadRepoFiles([]string{path}, false)
 	if len(repos) != 2 {
 		t.Fatalf("expected 2 repos, got %d", len(repos))
 	}
@@ -49,7 +49,7 @@ func TestLoadRepoFile_JSONSingleObject(t *testing.T) {
 	path := writeTempFile(t, "repo-single-*.json", content)
 	defer os.Remove(path)
 
-	repos := LoadRepoFiles([]string{path})
+	repos := LoadRepoFiles([]string{path}, false)
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 repo, got %d", len(repos))
 	}
@@ -65,7 +65,7 @@ func TestLoadRepoFile_YAMLArray(t *testing.T) {
 	path := writeTempFile(t, "repos-*.yml", content)
 	defer os.Remove(path)
 
-	repos := LoadRepoFiles([]string{path})
+	repos := LoadRepoFiles([]string{path}, false)
 	if len(repos) != 2 {
 		t.Fatalf("expected 2 repos, got %d", len(repos))
 	}
@@ -80,7 +80,7 @@ func TestLoadRepoFile_YAMLSingleObject(t *testing.T) {
 	path := writeTempFile(t, "repo-single-*.yaml", content)
 	defer os.Remove(path)
 
-	repos := LoadRepoFiles([]string{path})
+	repos := LoadRepoFiles([]string{path}, false)
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 repo, got %d", len(repos))
 	}
@@ -95,7 +95,39 @@ func TestLoadRepoFile_FilenameFallback(t *testing.T) {
 	path := writeTempFile(t, "repo-fallback-*.yaml", content)
 	defer os.Remove(path)
 
-	repos := LoadRepoFiles([]string{path})
+	repos := LoadRepoFiles([]string{path}, false)
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+
+	shortname := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if repos[0].Name != shortname {
+		t.Fatalf("unexpected name: '%s'", repos[0].Name)
+	}
+}
+
+func TestLoadRepoFile_FilenameFallbackEmpty(t *testing.T) {
+	content := ``
+	path := writeTempFile(t, "repo-fallback-*.yaml", content)
+	defer os.Remove(path)
+
+	repos := LoadRepoFiles([]string{path}, true)
+	if len(repos) != 1 {
+		t.Fatalf("expected 1 repo, got %d", len(repos))
+	}
+
+	shortname := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if repos[0].Name != shortname {
+		t.Fatalf("unexpected name: '%s'", repos[0].Name)
+	}
+}
+
+func TestLoadRepoFile_FilenameFallbackAlmostEmpty(t *testing.T) {
+	content := `{}`
+	path := writeTempFile(t, "repo-fallback-*.yaml", content)
+	defer os.Remove(path)
+
+	repos := LoadRepoFiles([]string{path}, true)
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 repo, got %d", len(repos))
 	}
@@ -111,7 +143,7 @@ func TestLoadRepoFile_Invalid(t *testing.T) {
 	path := writeTempFile(t, "repo-bad-*.yml", content)
 	defer os.Remove(path)
 
-	repos := LoadRepoFiles([]string{path})
+	repos := LoadRepoFiles([]string{path}, false)
 	if len(repos) != 0 {
 		t.Fatalf("unexpected non-error for invalid content")
 	}

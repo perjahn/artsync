@@ -105,7 +105,7 @@ func validateRepo(
 		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, repo.Name, check.usersAndGroups, allusers, allgroups, ldapConfig, dryRun)
 		if len(errs) > 0 {
 			for _, err := range errs {
-				fmt.Printf("'%s': Permission %s: %v\n", repo.Name, check.perm, err)
+				fmt.Printf("'%s': Permission '%s': %v\n", repo.Name, check.perm, err)
 			}
 			hasErrors = true
 		}
@@ -755,7 +755,11 @@ func checkUsersAndGroups(
 
 			if errGroup != nil || errUser != nil || (!createdUser && !importedGroup) {
 				joined := errors.Join(errGroup, errUser)
-				errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s': %w", ug, joined))
+				if joined != nil {
+					errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s': %w", ug, joined))
+				} else {
+					errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s'", ug))
+				}
 			}
 		}
 	}

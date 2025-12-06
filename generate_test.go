@@ -106,6 +106,74 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+func TestGenerateSplitEmpty(t *testing.T) {
+	tests := []struct {
+		repos             []ArtifactoryRepoDetailsResponse
+		permissiondetails []ArtifactoryPermissionDetails
+		folder            string
+		filename          string
+		wantErr           bool
+		generateyaml      bool
+		output            string
+	}{
+		{
+			[]ArtifactoryRepoDetailsResponse{
+				{
+					Key:           "test-repo2",
+					Description:   "",
+					Rclass:        "local",
+					PackageType:   "generic",
+					RepoLayoutRef: "simple-default",
+				},
+			},
+			[]ArtifactoryPermissionDetails{},
+			"/tmp/testrepos",
+			"/tmp/testrepos/test-repo2.yaml",
+			false,
+			true,
+			``},
+		{
+			[]ArtifactoryRepoDetailsResponse{
+				{
+					Key:           "test-repo2",
+					Description:   "",
+					Rclass:        "local",
+					PackageType:   "generic",
+					RepoLayoutRef: "simple-default",
+				},
+			},
+			[]ArtifactoryPermissionDetails{},
+			"/tmp/testrepos",
+			"/tmp/testrepos/test-repo2.yaml",
+			false,
+			false,
+			``},
+	}
+	for i, tc := range tests {
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, true, tc.folder, tc.generateyaml)
+		if err != nil {
+			if !tc.wantErr {
+				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
+					i+1, len(tests), err, tc.wantErr)
+			}
+		} else if tc.wantErr {
+			t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
+				i+1, len(tests), err, tc.wantErr)
+		} else {
+			data, err := os.ReadFile(tc.filename)
+			if err != nil {
+				t.Errorf("Generate (%d/%d): failed to read file %s: %v",
+					i+1, len(tests), tc.filename, err)
+				continue
+			}
+			if string(data) != tc.output {
+				t.Errorf("Generate (%d/%d): output mismatch:\nGot:\n%s\nWant:\n%s",
+					i+1, len(tests), string(data), tc.output)
+			}
+		}
+	}
+}
+
 func TestEqualStringSlices(t *testing.T) {
 	a := []string{"a", "b", "c"}
 	b := []string{"c", "b", "a"}
