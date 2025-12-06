@@ -15,6 +15,7 @@ func main() {
 	useAllPermissionTargetsAsSourceFlag := flag.Bool("a", false, "Use all permission targets as source, when generating.")
 	combineReposFlag := flag.Bool("c", false, "Combine identical repos, when generating.")
 	dryRunFlag := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
+	provisionEmpty := flag.Bool("e", false, "Provision empty files.")
 	showDiffFlag := flag.Bool("f", false, "Show json diff, when applying permission targets.")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
 	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
@@ -117,7 +118,7 @@ func main() {
 	var reposToProvision []Repo
 
 	if !generate {
-		reposToProvision = LoadRepoFiles(repofiles)
+		reposToProvision = LoadRepoFiles(repofiles, *provisionEmpty)
 		if len(reposToProvision) == 0 {
 			fmt.Println("Error: No valid repos to provision found in the provided repo files.")
 			os.Exit(1)
@@ -300,7 +301,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-f] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

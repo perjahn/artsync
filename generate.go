@@ -188,6 +188,9 @@ func Generate(
 			if err != nil {
 				return fmt.Errorf("error generating yaml: %w", err)
 			}
+			if len(data) == 3 || string(data) == "{}\n" {
+				data = []byte{}
+			}
 		} else {
 			filename = repo.Name + ".json"
 			reponame = repo.Name
