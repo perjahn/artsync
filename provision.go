@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -324,9 +326,16 @@ func provisionPermissionTarget(
 	allowpatterns bool,
 	dryRun bool) error {
 
+	var permissionName string
+	if repo.PermissionName != "" {
+		permissionName = repo.PermissionName
+	} else {
+		permissionName = repo.Name
+	}
+
 	var existingPermission *ArtifactoryPermissionDetails
 	for _, p := range allpermissiondetails {
-		if p.Name == repo.Name {
+		if p.Name == permissionName {
 			existingPermission = &p
 			break
 		}
@@ -350,18 +359,18 @@ func provisionPermissionTarget(
 				exclude := target.ExcludePatterns
 				if !allowpatterns && (!slices.Equal(include, []string{"**"}) || (len(exclude) != 0 && !slices.Equal(exclude, []string{""}))) {
 					return fmt.Errorf("'%s': Ignoring permission target due to existing non-default include/exclude patterns: permission target: '%s', include: '%s', exclude: '%s' %d",
-						repo.Name, existingPermission.Name, include, exclude, len(exclude))
+						permissionName, existingPermission.Name, include, exclude, len(exclude))
 				}
 			}
 
-			fmt.Printf("'%s': Permission target already exists, updating...\n", repo.Name)
+			fmt.Printf("'%s': Permission target already exists, updating...\n", permissionName)
 
-			updateExistingPermission(client, baseurl, token, repo, users, groups, existingPermission, showDiff, dryRun)
+			updateExistingPermission(client, baseurl, token, repo, permissionName, users, groups, existingPermission, showDiff, dryRun)
 		}
 	} else {
-		fmt.Printf("'%s': Permission target does not exist, creating...\n", repo.Name)
+		fmt.Printf("'%s': Permission target does not exist, creating...\n", permissionName)
 
-		createNewPermission(client, baseurl, token, repo, users, groups, dryRun)
+		createNewPermission(client, baseurl, token, repo, permissionName, allpermissiondetails, users, groups, dryRun)
 	}
 
 	return nil
@@ -372,6 +381,7 @@ func updateExistingPermission(
 	baseurl string,
 	token string,
 	repo Repo,
+	permissionName string,
 	users map[string][]string,
 	groups map[string][]string,
 	existingPermission *ArtifactoryPermissionDetails,
@@ -379,13 +389,13 @@ func updateExistingPermission(
 	dryRun bool) error {
 
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Users, users) {
-		printDiff(repo, existingPermission.Resources.Artifact.Actions.Users, users, "Users")
+		printDiff(repo, permissionName, existingPermission.Resources.Artifact.Actions.Users, users, "Users")
 	}
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Groups, groups) {
-		printDiff(repo, existingPermission.Resources.Artifact.Actions.Groups, groups, "Groups")
+		printDiff(repo, permissionName, existingPermission.Resources.Artifact.Actions.Groups, groups, "Groups")
 	}
 
-	url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, repo.Name)
+	url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, permissionName)
 
 	targets := make(map[string]ArtifactoryPermissionDetailsTarget)
 	targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
@@ -416,6 +426,31 @@ func updateExistingPermission(
 	if showDiff {
 		artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
 		PrintDiff(artifactjsonsource, string(json))
+	} else {
+		var out bytes.Buffer
+
+		origGetWriterFn := GetWriterFn
+		defer func() { GetWriterFn = origGetWriterFn }()
+
+		GetWriterFn = func() io.Writer {
+			return &out
+		}
+
+		artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
+		PrintDiff(artifactjsonsource, string(json))
+
+		difftext := out.String()
+		if difftext != "" {
+			file, err := os.OpenFile("jsondiff.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("error opening file for append: %v", err)
+			}
+			_, err = file.WriteString(difftext)
+			if err != nil {
+				return fmt.Errorf("error writing diff text: %v", err)
+			}
+			file.Close()
+		}
 	}
 
 	if !dryRun {
@@ -426,7 +461,7 @@ func updateExistingPermission(
 		defer resp.Body.Close()
 
 		if resp.StatusCode != 200 {
-			fmt.Printf("Key: '%s'\n", repo.Name)
+			fmt.Printf("Key: '%s'\n", permissionName)
 			fmt.Printf("Url: '%s'\n", url)
 			fmt.Printf("Unexpected status: '%s'\n", resp.Status)
 			fmt.Printf("Request body: '%s'\n", req.Body)
@@ -434,7 +469,7 @@ func updateExistingPermission(
 			fmt.Printf("Response body: '%s'\n", body)
 			return fmt.Errorf("error updating permission target")
 		} else {
-			fmt.Printf("'%s': Updated permission target successfully.\n", repo.Name)
+			fmt.Printf("'%s': Updated permission target successfully.\n", permissionName)
 		}
 	}
 
@@ -446,23 +481,25 @@ func createNewPermission(
 	baseurl string,
 	token string,
 	repo Repo,
+	permissionName string,
+	allpermissiondetails []ArtifactoryPermissionDetails,
 	users map[string][]string,
 	groups map[string][]string,
 	dryRun bool) error {
 
-	printDiff(repo, map[string][]string{}, users, "Users")
-	printDiff(repo, map[string][]string{}, groups, "Groups")
+	printDiff(repo, permissionName, map[string][]string{}, users, "Users")
+	printDiff(repo, permissionName, map[string][]string{}, groups, "Groups")
 
 	url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
 
 	targets := make(map[string]ArtifactoryPermissionDetailsTarget)
-	targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
+	targets[permissionName] = ArtifactoryPermissionDetailsTarget{
 		IncludePatterns: []string{"**"},
 		ExcludePatterns: []string{},
 	}
 
 	artifactorypermissiontarget := ArtifactoryPermissionDetails{
-		Name: repo.Name,
+		Name: permissionName,
 		Resources: ArtifactoryPermissionDetailsResources{
 			Artifact: ArtifactoryPermissionDetailsArtifact{
 				Actions: ArtifactoryPermissionDetailsActions{
@@ -494,7 +531,7 @@ func createNewPermission(
 		defer resp.Body.Close()
 
 		if resp.StatusCode != 201 {
-			fmt.Printf("Key: '%s'\n", repo.Name)
+			fmt.Printf("Key: '%s'\n", permissionName)
 			fmt.Printf("Url: '%s'\n", url)
 			fmt.Printf("Unexpected status: '%s'\n", resp.Status)
 			fmt.Printf("Request body: '%s'\n", req.Body)
@@ -502,14 +539,16 @@ func createNewPermission(
 			fmt.Printf("Response body: '%s'\n", body)
 			return fmt.Errorf("error creating permission target")
 		} else {
-			fmt.Printf("'%s': Created permission target successfully.\n", repo.Name)
+			fmt.Printf("'%s': Created permission target successfully.\n", permissionName)
 		}
 	}
+
+	allpermissiondetails = append(allpermissiondetails, artifactorypermissiontarget)
 
 	return nil
 }
 
-func printDiff(repo Repo, old map[string][]string, new map[string][]string, kind string) {
+func printDiff(repo Repo, permissionName string, old map[string][]string, new map[string][]string, kind string) {
 	var names []string
 	for name := range old {
 		names = append(names, name)
@@ -537,18 +576,18 @@ func printDiff(repo Repo, old map[string][]string, new map[string][]string, kind
 			slices.Sort(permissionsNew)
 
 			if !slices.Equal(permissionsOld, permissionsNew) {
-				fmt.Printf("'%s': %s diff: '%s': %s -> %s\n", repo.Name, kind, name, strings.Join(permissionsOld, ", "), strings.Join(permissionsNew, ", "))
+				fmt.Printf("'%s': permission: '%s': %s diff: '%s': %s -> %s\n", repo.Name, permissionName, kind, name, strings.Join(permissionsOld, ", "), strings.Join(permissionsNew, ", "))
 			}
 		} else if foundOld && !foundNew {
 			permissionsOld := old[name]
 			slices.Sort(permissionsOld)
 
-			fmt.Printf("'%s': %s diff: '%s': %s -> removed\n", repo.Name, kind, name, strings.Join(permissionsOld, ", "))
+			fmt.Printf("'%s': permission: '%s': %s diff: '%s': %s -> removed\n", repo.Name, permissionName, kind, name, strings.Join(permissionsOld, ", "))
 		} else if !foundOld && foundNew {
 			permissionsNew := new[name]
 			slices.Sort(permissionsNew)
 
-			fmt.Printf("'%s': %s diff: '%s': notexist -> %s\n", repo.Name, kind, name, strings.Join(permissionsNew, ", "))
+			fmt.Printf("'%s': permission: '%s': %s diff: '%s': notexist -> %s\n", repo.Name, permissionName, kind, name, strings.Join(permissionsNew, ", "))
 		}
 	}
 }

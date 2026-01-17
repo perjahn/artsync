@@ -23,6 +23,7 @@ func main() {
 	onlyGenerateMatchingReposFlag := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatternsFlag := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
 	onlyGenerateCleanReposFlag := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
+	allowRenamedPermissionsFlag := flag.Bool("r", false, "Allow non-conventional permission target names, when generating.")
 	splitFlag := flag.Bool("s", false, "Split into one file for each repo, when generating. Uses specified repofile as subfolder. Ignores combine flag.")
 	createUsersFlag := flag.Bool("u", false, "Create missing users, from ldap.")
 	overwriteFlag := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
@@ -39,6 +40,7 @@ func main() {
 	onlyGenerateMatchingRepos := getFlagEnv(*onlyGenerateMatchingReposFlag, "ARTSYNC_ONLY_GENERATE_MATCHING")
 	allowpatterns := getFlagEnv(*allowpatternsFlag, "ARTSYNC_ALLOW_PATTERNS")
 	onlyGenerateCleanRepos := getFlagEnv(*onlyGenerateCleanReposFlag, "ARTSYNC_ONLY_GENERATE_CLEAN_REPOS")
+	allowRenamedPermissions := getFlagEnv(*allowRenamedPermissionsFlag, "ARTSYNC_ALLOW_RENAMED_PERMISSIONS")
 	split := getFlagEnv(*splitFlag, "ARTSYNC_SPLIT")
 	createUsers := getFlagEnv(*createUsersFlag, "ARTSYNC_CREATE_USERS")
 	overwrite := getFlagEnv(*overwriteFlag, "ARTSYNC_OVERWRITE")
@@ -73,6 +75,10 @@ func main() {
 	}
 	if !generate && onlyGenerateCleanRepos {
 		fmt.Println("Error: -q flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
+	if !generate && allowRenamedPermissions {
+		fmt.Println("Error: -r flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 	if !generate && overwrite {
@@ -137,7 +143,7 @@ func main() {
 	}
 
 	if generate {
-		err = Generate(repos, permissiondetails, useAllPermissionTargetsAsSource, onlyGenerateMatchingRepos, onlyGenerateCleanRepos, combineRepos, split, repofiles[0], generateyaml)
+		err = Generate(repos, permissiondetails, useAllPermissionTargetsAsSource, onlyGenerateMatchingRepos, onlyGenerateCleanRepos, allowRenamedPermissions, combineRepos, split, repofiles[0], generateyaml)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -150,6 +156,12 @@ func main() {
 				fmt.Printf("Error reading ldap config: %v\n", err)
 				os.Exit(1)
 			}
+		}
+
+		reposToProvision, err = Validate(reposToProvision, repos, permissiondetails)
+		if err != nil {
+			fmt.Printf("Error validating: %v\n", err)
+			os.Exit(1)
 		}
 
 		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, dryRun)
@@ -301,7 +313,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-k] [-l] [-m] [-p] [-q] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-k] [-l] [-m] [-p] [-q] [-r] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")
