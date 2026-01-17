@@ -82,7 +82,7 @@ func TestGenerate(t *testing.T) {
 `},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, false, tc.filename, true)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, false, false, tc.filename, true)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -150,7 +150,7 @@ func TestGenerateSplitEmpty(t *testing.T) {
 			``},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, true, tc.folder, tc.generateyaml)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, false, true, tc.folder, tc.generateyaml)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -171,6 +171,61 @@ func TestGenerateSplitEmpty(t *testing.T) {
 					i+1, len(tests), string(data), tc.output)
 			}
 		}
+	}
+}
+
+func TestGenerateRenamedPermissions(t *testing.T) {
+	repos := []ArtifactoryRepoDetailsResponse{
+		{
+			Key:           "test-repo-renamed",
+			Description:   "",
+			Rclass:        "local",
+			PackageType:   "generic",
+			RepoLayoutRef: "simple-default",
+		},
+	}
+
+	permissions := []ArtifactoryPermissionDetails{
+		{
+			Name: "test-permission",
+			Resources: ArtifactoryPermissionDetailsResources{
+				Artifact: ArtifactoryPermissionDetailsArtifact{
+					Actions: ArtifactoryPermissionDetailsActions{
+						Users: map[string][]string{
+							"user1": {"READ", "WRITE"},
+						},
+						Groups: map[string][]string{},
+					},
+					Targets: map[string]ArtifactoryPermissionDetailsTarget{
+						"test-repo-renamed": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+					},
+				},
+			},
+			JsonSource: "",
+		},
+	}
+
+	folder := "/tmp/testrepos"
+	filename := "/tmp/testrepos/test-repo-renamed.yaml"
+
+	err := Generate(repos, permissions, false, false, false, true, true, true, folder, true)
+	if err != nil {
+		t.Errorf("Generate (1/1): error = %v", err)
+		return
+	}
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Errorf("Generate (1/1): failed to read file %s: %v", filename, err)
+		return
+	}
+
+	expected := "permissionName: test-permission\n"
+	if string(data) != expected {
+		t.Errorf("Generate (1/1): output mismatch:\nGot (%d):\n'%s'\nExpected:\n'%s'\n", len(string(data)), string(data), expected)
 	}
 }
 

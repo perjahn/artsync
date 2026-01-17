@@ -142,6 +142,91 @@ func TestProvisionPermissions(t *testing.T) {
 	}
 }
 
+func TestProvisionRenamedPermissions(t *testing.T) {
+	tc := testcase{
+		[]Repo{
+			{
+				Name:           "test-repo",
+				Description:    "Test repository new",
+				Rclass:         "",
+				PackageType:    "",
+				Layout:         "maven-2-default",
+				PermissionName: "test-permission",
+				Read:           []string{"test-user", "test-user"},
+				Write:          []string{"test-user"},
+				Manage:         []string{"test-user"},
+				Scan:           []string{"test-user"},
+			},
+		},
+		[]ArtifactoryRepoDetailsResponse{
+			{
+				Key:           "test-repo",
+				Description:   "Test repository",
+				Rclass:        "local",
+				PackageType:   "generic",
+				RepoLayoutRef: "simple-default",
+			},
+		},
+		[]ArtifactoryUser{{Username: "test-user"}},
+		[]ArtifactoryGroup{{GroupName: "test-group"}},
+		[]ArtifactoryPermissionDetails{
+			{
+				Name: "test-permission",
+				Resources: ArtifactoryPermissionDetailsResources{
+					Artifact: ArtifactoryPermissionDetailsArtifact{
+						Actions: ArtifactoryPermissionDetailsActions{
+							Users:  map[string][]string{"test-user": {"READ", "WRITE", "OTHER"}},
+							Groups: map[string][]string{"test-group": {"READ"}},
+						},
+						Targets: map[string]ArtifactoryPermissionDetailsTarget{
+							"test-repo": {IncludePatterns: []string{"**"}, ExcludePatterns: []string{}},
+						},
+					},
+				},
+				JsonSource: `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["OTHER","READ","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`,
+			},
+		},
+		false,
+		false,
+		"",
+		"",
+		`{"ok":true}`,
+		`{"ok":true}`}
+
+	var callCount int
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		var reponse *http.Response
+		if callCount == 0 {
+			reponse = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
+		} else {
+			reponse = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}
+		}
+
+		callCount++
+		return reponse, nil
+	})
+
+	var out bytes.Buffer
+
+	origGetWriterFn := GetWriterFn
+	defer func() { GetWriterFn = origGetWriterFn }()
+
+	GetWriterFn = func() io.Writer {
+		return &out
+	}
+
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, tc.dryRun)
+	if err != nil {
+		t.Errorf("ProvisionRenamedPermissions: error = %v", err)
+	}
+
+	consoleDiffOutput := "+         \"MANAGE\",\n+         \"SCAN\",\n"
+	got := out.String()
+	if strings.TrimSpace(got) != strings.TrimSpace(consoleDiffOutput) {
+		t.Errorf("ProvisionPermissions: console output mismatch\n got: %q\nwant: %q", got, consoleDiffOutput)
+	}
+}
+
 // Create/import new ldap users/groups
 func TestProvisionLdap(t *testing.T) {
 	tc := testcase{
