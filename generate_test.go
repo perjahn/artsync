@@ -82,7 +82,7 @@ func TestGenerate(t *testing.T) {
 `},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, false, tc.filename, true)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, false, tc.filename, true)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -150,7 +150,7 @@ func TestGenerateSplitEmpty(t *testing.T) {
 			``},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, true, true, tc.folder, tc.generateyaml)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, true, tc.folder, tc.generateyaml)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -171,6 +171,163 @@ func TestGenerateSplitEmpty(t *testing.T) {
 					i+1, len(tests), string(data), tc.output)
 			}
 		}
+	}
+}
+
+func TestGenerateRenamedPermissions(t *testing.T) {
+	repos := []ArtifactoryRepoDetailsResponse{
+		{
+			Key:           "test-repo-renamed1",
+			Rclass:        "local",
+			PackageType:   "generic",
+			RepoLayoutRef: "simple-default",
+		},
+		{
+			Key:           "test-repo-renamed2",
+			Rclass:        "local",
+			PackageType:   "generic",
+			RepoLayoutRef: "simple-default",
+		},
+		{
+			Key:           "test-repo-renamed4",
+			Rclass:        "local",
+			PackageType:   "generic",
+			RepoLayoutRef: "simple-default",
+		},
+	}
+
+	permissions := []ArtifactoryPermissionDetails{
+		{
+			Name: "test-permission1",
+			Resources: ArtifactoryPermissionDetailsResources{
+				Artifact: ArtifactoryPermissionDetailsArtifact{
+					Actions: ArtifactoryPermissionDetailsActions{
+						Users: map[string][]string{
+							"user1": {"READ", "WRITE"},
+						},
+						Groups: map[string][]string{},
+					},
+					Targets: map[string]ArtifactoryPermissionDetailsTarget{
+						"test-repo-renamed1": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+					},
+				},
+			},
+		},
+		{
+			Name: "test-permission2",
+			Resources: ArtifactoryPermissionDetailsResources{
+				Artifact: ArtifactoryPermissionDetailsArtifact{
+					Actions: ArtifactoryPermissionDetailsActions{
+						Users: map[string][]string{
+							"user1": {"READ", "ANNOTATE", "WRITE"},
+						},
+						Groups: map[string][]string{},
+					},
+					Targets: map[string]ArtifactoryPermissionDetailsTarget{
+						"test-repo-renamed2": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+					},
+				},
+			},
+		},
+		{
+			Name: "test-permission3",
+			Resources: ArtifactoryPermissionDetailsResources{
+				Artifact: ArtifactoryPermissionDetailsArtifact{
+					Actions: ArtifactoryPermissionDetailsActions{
+						Users: map[string][]string{
+							"user1": {"READ", "WRITE", "DELETE"},
+						},
+						Groups: map[string][]string{},
+					},
+					Targets: map[string]ArtifactoryPermissionDetailsTarget{
+						"test-repo-renamed2": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+					},
+				},
+			},
+		},
+		{
+			Name: "old-permission-name-for-rename4",
+			Resources: ArtifactoryPermissionDetailsResources{
+				Artifact: ArtifactoryPermissionDetailsArtifact{
+					Actions: ArtifactoryPermissionDetailsActions{
+						Users: map[string][]string{
+							"user1": {"READ", "WRITE", "MANAGE"},
+						},
+						Groups: map[string][]string{},
+					},
+					Targets: map[string]ArtifactoryPermissionDetailsTarget{
+						"test-repo-renamed2": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+					},
+				},
+			},
+		},
+		{
+			Name: "test-permission4",
+			Resources: ArtifactoryPermissionDetailsResources{
+				Artifact: ArtifactoryPermissionDetailsArtifact{
+					Actions: ArtifactoryPermissionDetailsActions{
+						Users: map[string][]string{
+							"user2": {"READ"},
+						},
+						Groups: map[string][]string{},
+					},
+					Targets: map[string]ArtifactoryPermissionDetailsTarget{
+						"test-repo-renamed4": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+						"another-repo": {
+							IncludePatterns: []string{"**"},
+							ExcludePatterns: []string{},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	filename := "/tmp/testrepos/test-repo-renamed.yaml"
+
+	err := Generate(repos, permissions, false, false, false, true, true, false, filename, true)
+	if err != nil {
+		t.Errorf("GenerateRenamedPermissions: error = %v", err)
+		return
+	}
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Errorf("GenerateRenamedPermissions: failed to read file %s: %v", filename, err)
+		return
+	}
+
+	if strings.Contains(string(data), "test-repo-renamed4") {
+		t.Errorf("GenerateRenamedPermissions: repo should not contain test-repo-renamed4 (only referenced by multi-target permissions):\n%s", string(data))
+	}
+	if strings.Contains(string(data), "MANAGE") {
+		t.Errorf("GenerateRenamedPermissions: repo should not contain MANAGE permission:\n%s", string(data))
+	}
+
+	want := `- name: test-repo-renamed1
+  permissionName: test-permission1
+  read:
+  - user1
+  write:
+  - user1
+`
+	if string(data) != want {
+		t.Errorf("GenerateRenamedPermissions: output mismatch:\nGot (%d):\n'%s'\nWant:\n'%s'\n", len(string(data)), string(data), want)
 	}
 }
 

@@ -17,6 +17,7 @@ func Generate(
 	useAllPermissionTargetsAsSource bool,
 	onlyGenerateMatchingRepos bool,
 	onlyGenerateCleanRepos bool,
+	allowRenamedPermissions bool,
 	combineRepos bool,
 	split bool,
 	repofile string,
@@ -25,25 +26,64 @@ func Generate(
 	var reposToSave []Repo
 
 	for _, repo := range repos {
-		if onlyGenerateMatchingRepos {
-			found := false
-			for _, permission := range permissiondetails {
-				if permission.Name == repo.Key {
-					found = true
-					break
-				}
-			}
-			if !found {
+		if onlyGenerateMatchingRepos && !includeOnlyMatchingRepos(repo.Key, permissiondetails) {
+			continue
+		}
+
+		var permissionName string
+		if allowRenamedPermissions {
+			var filter bool
+			permissionName, filter = includeOnlyMatchingAndRenamedRepos(repo.Key, permissiondetails)
+			if !filter {
 				continue
 			}
 		}
 
+		if onlyGenerateCleanRepos && !includeOnlyCleanRepos(repo.Key, permissiondetails, useAllPermissionTargetsAsSource) {
+			continue
+		}
+
 		repoToSave := Repo{
-			Name:        repo.Key,
-			Description: repo.Description,
-			Rclass:      repo.Rclass,
-			PackageType: repo.PackageType,
-			Layout:      repo.RepoLayoutRef,
+			Name:           repo.Key,
+			Description:    repo.Description,
+			Rclass:         repo.Rclass,
+			PackageType:    repo.PackageType,
+			Layout:         repo.RepoLayoutRef,
+			PermissionName: permissionName,
+		}
+
+		if allowRenamedPermissions {
+			if permissionName == "" {
+				for _, permission := range permissiondetails {
+					if permission.Name == repo.Key {
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
+					}
+				}
+			} else {
+				for _, permission := range permissiondetails {
+					if permission.Name == permissionName {
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
+					}
+				}
+			}
+		} else if useAllPermissionTargetsAsSource {
+			for _, permission := range permissiondetails {
+				for reponame := range permission.Resources.Artifact.Targets {
+					if reponame == repo.Key {
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
+						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
+					}
+				}
+			}
+		} else {
+			for _, permission := range permissiondetails {
+				if permission.Name == repo.Key {
+					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
+					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
+				}
+			}
 		}
 
 		if strings.EqualFold(repo.Rclass, "local") {
@@ -54,36 +94,6 @@ func Generate(
 		}
 		if strings.EqualFold(repo.RepoLayoutRef, "simple-default") {
 			repoToSave.Layout = ""
-		}
-
-		clean := true
-		if useAllPermissionTargetsAsSource {
-			for _, permission := range permissiondetails {
-				for reponame := range permission.Resources.Artifact.Targets {
-					if reponame == repo.Key {
-						if onlyGenerateCleanRepos && !isClean(repo.Key, permission.Name, permission.Resources.Artifact.Targets[repo.Key]) {
-							clean = false
-						}
-
-						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
-						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
-					}
-				}
-			}
-		} else {
-			for _, permission := range permissiondetails {
-				if permission.Name == repo.Key {
-					if onlyGenerateCleanRepos && !isClean(repo.Key, permission.Name, permission.Resources.Artifact.Targets[repo.Key]) {
-						clean = false
-					}
-
-					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
-					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
-				}
-			}
-		}
-		if !clean {
-			continue
 		}
 
 		slices.Sort(repoToSave.Read)
@@ -100,6 +110,7 @@ func Generate(
 					reposToSave[i].Description == repoToSave.Description &&
 					reposToSave[i].Rclass == repoToSave.Rclass &&
 					reposToSave[i].Layout == repoToSave.Layout &&
+					reposToSave[i].PermissionName == repoToSave.PermissionName &&
 					equalStringSlices(reposToSave[i].Read, repoToSave.Read) &&
 					equalStringSlices(reposToSave[i].Annotate, repoToSave.Annotate) &&
 					equalStringSlices(reposToSave[i].Write, repoToSave.Write) &&
@@ -138,52 +149,120 @@ func Generate(
 		return reposToSave[i].Name < reposToSave[j].Name
 	})
 
-	if !split {
-		var data []byte
-		if generateyaml {
-			var err error
-			data, err = yaml.Marshal(reposToSave)
-			if err != nil {
-				return fmt.Errorf("error generating yaml: %w", err)
-			}
-		} else {
-			var err error
-			data, err = json.MarshalIndent(reposToSave, "", "  ")
-			if err != nil {
-				return fmt.Errorf("error generating json: %w", err)
-			}
-		}
+	if split {
+		return saveSplitRepos(reposToSave, repofile, generateyaml)
+	}
+	return saveCombinedRepos(reposToSave, repofile, generateyaml)
+}
 
-		file, err := os.Create(repofile)
-		if err != nil {
-			return fmt.Errorf("error creating file: %w", err)
+func includeOnlyMatchingRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails) bool {
+	for _, permission := range permissiondetails {
+		if permission.Name == repokey {
+			if len(permission.Resources.Artifact.Targets) != 1 {
+				return false
+			}
+			_, exists := permission.Resources.Artifact.Targets[repokey]
+			return exists
 		}
-		defer file.Close()
+	}
+	return false
+}
 
-		_, err = file.Write(data)
-		if err != nil {
-			return fmt.Errorf("error saving file: %w", err)
+func includeOnlyMatchingAndRenamedRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails) (string, bool) {
+	for _, permission := range permissiondetails {
+		if permission.Name == repokey {
+			if len(permission.Resources.Artifact.Targets) != 1 {
+				return "", false
+			}
+			_, exists := permission.Resources.Artifact.Targets[repokey]
+			return "", exists
 		}
-		return nil
 	}
 
-	if _, err := os.Stat(repofile); os.IsNotExist(err) {
-		fmt.Printf("Creating folder: '%s'\n", repofile)
-		err = os.Mkdir(repofile, 0755)
+	var permissionNames []string
+	for _, permission := range permissiondetails {
+		_, exists := permission.Resources.Artifact.Targets[repokey]
+		if exists && len(permission.Resources.Artifact.Targets) == 1 {
+			permissionNames = append(permissionNames, permission.Name)
+		}
+	}
+
+	if len(permissionNames) == 1 {
+		return permissionNames[0], true
+	}
+
+	return "", false
+}
+
+func includeOnlyCleanRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails, useAllPermissionTargetsAsSource bool) bool {
+	if useAllPermissionTargetsAsSource {
+		for _, permission := range permissiondetails {
+			for reponame := range permission.Resources.Artifact.Targets {
+				if reponame == repokey {
+					if !isClean(repokey, permission.Name, permission.Resources.Artifact.Targets[repokey]) {
+						return false
+					}
+				}
+			}
+		}
+	} else {
+		for _, permission := range permissiondetails {
+			if permission.Name == repokey {
+				if !isClean(repokey, permission.Name, permission.Resources.Artifact.Targets[repokey]) {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
+}
+
+func saveCombinedRepos(reposToSave []Repo, repofile string, generateyaml bool) error {
+	var data []byte
+	var err error
+	if generateyaml {
+		data, err = yaml.Marshal(reposToSave)
 		if err != nil {
-			return fmt.Errorf("error creating folder: '%s' %w", repofile, err)
+			return fmt.Errorf("error generating yaml: %w", err)
+		}
+	} else {
+		data, err = json.MarshalIndent(reposToSave, "", "  ")
+		if err != nil {
+			return fmt.Errorf("error generating json: %w", err)
+		}
+	}
+
+	file, err := os.Create(repofile)
+	if err != nil {
+		return fmt.Errorf("error creating file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = file.Write(data)
+	if err != nil {
+		return fmt.Errorf("error saving file: %w", err)
+	}
+	return nil
+}
+
+func saveSplitRepos(reposToSave []Repo, folder string, generateyaml bool) error {
+	if _, err := os.Stat(folder); os.IsNotExist(err) {
+		fmt.Printf("Creating folder: '%s'\n", folder)
+		err = os.Mkdir(folder, 0755)
+		if err != nil {
+			return fmt.Errorf("error creating folder: '%s' %w", folder, err)
 		}
 	}
 
 	for _, repo := range reposToSave {
 		var filename, reponame string
 		var data []byte
+		var err error
 		if generateyaml {
-			filename = fmt.Sprintf("%s/%s.yaml", repofile, repo.Name)
+			filename = fmt.Sprintf("%s/%s.yaml", folder, repo.Name)
 			reponame = repo.Name
 			repo.Name = ""
-
-			var err error
 			data, err = yaml.Marshal(repo)
 			if err != nil {
 				return fmt.Errorf("error generating yaml: %w", err)
@@ -192,11 +271,9 @@ func Generate(
 				data = []byte{}
 			}
 		} else {
-			filename = repo.Name + ".json"
+			filename = fmt.Sprintf("%s/%s.json", folder, repo.Name)
 			reponame = repo.Name
 			repo.Name = ""
-
-			var err error
 			data, err = json.MarshalIndent(repo, "", "  ")
 			if err != nil {
 				return fmt.Errorf("error generating json: %w", err)
@@ -215,7 +292,6 @@ func Generate(
 			return fmt.Errorf("error saving file: %w", err)
 		}
 	}
-
 	return nil
 }
 
