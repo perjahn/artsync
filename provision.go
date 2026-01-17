@@ -700,10 +700,6 @@ func checkUsersAndGroups(
 			continue
 		}
 
-		if userExists || groupExists {
-			fmt.Printf("user or group exists with the name: '%s'\n", ug)
-		}
-
 		if !userExists && !groupExists {
 			var errGroup, errUser error
 			var importedGroup, createdUser bool

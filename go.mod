@@ -1,10 +1,10 @@
 module artsync
 
-go 1.25.5
+go 1.25.6
 
 require (
 	github.com/go-ldap/ldap/v3 v3.4.12
-	github.com/goccy/go-yaml v1.19.1
+	github.com/goccy/go-yaml v1.19.2
 )
 
 require (

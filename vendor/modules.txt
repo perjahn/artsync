@@ -8,7 +8,7 @@ github.com/go-asn1-ber/asn1-ber
 # github.com/go-ldap/ldap/v3 v3.4.12
 ## explicit; go 1.23.0
 github.com/go-ldap/ldap/v3
-# github.com/goccy/go-yaml v1.19.1
+# github.com/goccy/go-yaml v1.19.2
 ## explicit; go 1.21.0
 github.com/goccy/go-yaml
 github.com/goccy/go-yaml/ast
