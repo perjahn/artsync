@@ -195,17 +195,15 @@ func loadLdapConfig(createUsers bool, importGroups bool, configFile string, ldap
 
 	envLdapUsername := os.Getenv("ARTSYNC_LDAP_USERNAME")
 	envLdapPassword := os.Getenv("ARTSYNC_LDAP_PASSWORD")
-	envGroupsettingsname := os.Getenv("ARTSYNC_GROUPSETTINGSNAME")
 	envArtifactoryUsername := os.Getenv("ARTSYNC_ARTIFACTORY_USERNAME")
 	envArtifactoryPassword := os.Getenv("ARTSYNC_ARTIFACTORY_PASSWORD")
 
-	if envLdapUsername != "" && envLdapPassword != "" && envGroupsettingsname != "" && envArtifactoryUsername != "" && envArtifactoryPassword != "" {
+	if envLdapUsername != "" && envLdapPassword != "" && envArtifactoryUsername != "" && envArtifactoryPassword != "" {
 		return LdapConfig{
 			CreateUsers:         createUsers,
 			ImportGroups:        importGroups,
 			LdapUsername:        envLdapUsername,
 			LdapPassword:        envLdapPassword,
-			Groupsettingsname:   envGroupsettingsname,
 			ArtifactoryUsername: envArtifactoryUsername,
 			ArtifactoryPassword: envArtifactoryPassword,
 			Ldapsettings:        ldapsettings,
@@ -231,9 +229,6 @@ func loadLdapConfig(createUsers bool, importGroups bool, configFile string, ldap
 	}
 	if envLdapPassword != "" {
 		ldapConfig.LdapPassword = envLdapPassword
-	}
-	if envGroupsettingsname != "" {
-		ldapConfig.Groupsettingsname = envGroupsettingsname
 	}
 	if envArtifactoryUsername != "" {
 		ldapConfig.ArtifactoryUsername = envArtifactoryUsername
