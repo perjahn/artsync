@@ -158,4 +158,5 @@ type LdapConfig struct {
 	ArtifactoryPassword  string                         `json:"artifactorypassword"`
 	Ldapsettings         []ArtifactoryLDAPSettings      `json:"-"`
 	Ldapgroupsettings    []ArtifactoryLDAPGroupSettings `json:"-"`
+	ExcludeSettings      []string                       `json:"excludesettings"`
 }

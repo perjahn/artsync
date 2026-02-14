@@ -78,8 +78,8 @@ func Provision(
 
 	fmt.Printf("Created repos: %d\n", createdRepoCount)
 	fmt.Printf("Updated repos: %d\n", updatedRepoCount)
-	fmt.Printf("Created permissions: %d\n", createdPermissionCount)
-	fmt.Printf("Updated permissions: %d\n", updatedPermissionCount)
+	fmt.Printf("Created permission targets: %d\n", createdPermissionCount)
+	fmt.Printf("Updated permission targets: %d\n", updatedPermissionCount)
 
 	return nil
 }
