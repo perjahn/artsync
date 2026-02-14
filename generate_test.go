@@ -82,7 +82,7 @@ func TestGenerate(t *testing.T) {
 `},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, false, tc.filename, true)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, false, tc.filename, false)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -113,7 +113,7 @@ func TestGenerateSplitEmpty(t *testing.T) {
 		folder            string
 		filename          string
 		wantErr           bool
-		generateyaml      bool
+		generatejson      bool
 		output            string
 	}{
 		{
@@ -130,7 +130,7 @@ func TestGenerateSplitEmpty(t *testing.T) {
 			"/tmp/testrepos",
 			"/tmp/testrepos/test-repo2.yaml",
 			false,
-			true,
+			false,
 			``},
 		{
 			[]ArtifactoryRepoDetailsResponse{
@@ -146,11 +146,11 @@ func TestGenerateSplitEmpty(t *testing.T) {
 			"/tmp/testrepos",
 			"/tmp/testrepos/test-repo2.yaml",
 			false,
-			false,
+			true,
 			``},
 	}
 	for i, tc := range tests {
-		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, true, tc.folder, tc.generateyaml)
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, true, tc.folder, tc.generatejson)
 		if err != nil {
 			if !tc.wantErr {
 				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
@@ -300,7 +300,7 @@ func TestGenerateRenamedPermissions(t *testing.T) {
 
 	filename := "/tmp/testrepos/test-repo-renamed.yaml"
 
-	err := Generate(repos, permissions, false, false, false, true, true, false, filename, true)
+	err := Generate(repos, permissions, false, false, false, true, true, false, filename, false)
 	if err != nil {
 		t.Errorf("GenerateRenamedPermissions: error = %v", err)
 		return

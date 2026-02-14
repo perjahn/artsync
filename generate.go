@@ -21,7 +21,7 @@ func Generate(
 	combineRepos bool,
 	split bool,
 	repofile string,
-	generateyaml bool) error {
+	generatejson bool) error {
 
 	var reposToSave []Repo
 
@@ -150,9 +150,9 @@ func Generate(
 	})
 
 	if split {
-		return saveSplitRepos(reposToSave, repofile, generateyaml)
+		return saveSplitRepos(reposToSave, repofile, generatejson)
 	}
-	return saveCombinedRepos(reposToSave, repofile, generateyaml)
+	return saveCombinedRepos(reposToSave, repofile, generatejson)
 }
 
 func includeOnlyMatchingRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails) bool {
@@ -218,18 +218,18 @@ func includeOnlyCleanRepos(repokey string, permissiondetails []ArtifactoryPermis
 	return true
 }
 
-func saveCombinedRepos(reposToSave []Repo, repofile string, generateyaml bool) error {
+func saveCombinedRepos(reposToSave []Repo, repofile string, generatejson bool) error {
 	var data []byte
 	var err error
-	if generateyaml {
-		data, err = yaml.Marshal(reposToSave)
-		if err != nil {
-			return fmt.Errorf("error generating yaml: %w", err)
-		}
-	} else {
+	if generatejson {
 		data, err = json.MarshalIndent(reposToSave, "", "  ")
 		if err != nil {
 			return fmt.Errorf("error generating json: %w", err)
+		}
+	} else {
+		data, err = yaml.Marshal(reposToSave)
+		if err != nil {
+			return fmt.Errorf("error generating yaml: %w", err)
 		}
 	}
 
@@ -246,7 +246,7 @@ func saveCombinedRepos(reposToSave []Repo, repofile string, generateyaml bool) e
 	return nil
 }
 
-func saveSplitRepos(reposToSave []Repo, folder string, generateyaml bool) error {
+func saveSplitRepos(reposToSave []Repo, folder string, generatejson bool) error {
 	if _, err := os.Stat(folder); os.IsNotExist(err) {
 		fmt.Printf("Creating folder: '%s'\n", folder)
 		err = os.Mkdir(folder, 0755)
@@ -259,7 +259,15 @@ func saveSplitRepos(reposToSave []Repo, folder string, generateyaml bool) error 
 		var filename, reponame string
 		var data []byte
 		var err error
-		if generateyaml {
+		if generatejson {
+			filename = fmt.Sprintf("%s/%s.json", folder, repo.Name)
+			reponame = repo.Name
+			repo.Name = ""
+			data, err = json.MarshalIndent(repo, "", "  ")
+			if err != nil {
+				return fmt.Errorf("error generating json: %w", err)
+			}
+		} else {
 			filename = fmt.Sprintf("%s/%s.yaml", folder, repo.Name)
 			reponame = repo.Name
 			repo.Name = ""
@@ -269,14 +277,6 @@ func saveSplitRepos(reposToSave []Repo, folder string, generateyaml bool) error 
 			}
 			if len(data) == 3 || string(data) == "{}\n" {
 				data = []byte{}
-			}
-		} else {
-			filename = fmt.Sprintf("%s/%s.json", folder, repo.Name)
-			reponame = repo.Name
-			repo.Name = ""
-			data, err = json.MarshalIndent(repo, "", "  ")
-			if err != nil {
-				return fmt.Errorf("error generating json: %w", err)
 			}
 		}
 
