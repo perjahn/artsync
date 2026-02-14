@@ -18,6 +18,7 @@ func main() {
 	provisionEmpty := flag.Bool("e", false, "Provision empty files.")
 	showDiffFlag := flag.Bool("f", false, "Show json diff, when applying permission targets.")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
+	generatejsonFlag := flag.Bool("j", false, "Generate output in json format.")
 	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
 	importGroupsFlag := flag.Bool("l", false, "Import missing groups from ldap.")
 	onlyGenerateMatchingReposFlag := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
@@ -27,7 +28,6 @@ func main() {
 	splitFlag := flag.Bool("s", false, "Split into one file for each repo, when generating. Uses specified repofile as subfolder. Ignores combine flag.")
 	createUsersFlag := flag.Bool("u", false, "Create missing users, from ldap.")
 	overwriteFlag := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
-	generateyamlFlag := flag.Bool("y", false, "Generate output in yaml format.")
 	flag.Parse()
 
 	useAllPermissionTargetsAsSource := getFlagEnv(*useAllPermissionTargetsAsSourceFlag, "ARTSYNC_USE_ALL_PERMISSIONS")
@@ -35,6 +35,7 @@ func main() {
 	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN")
 	showDiff := getFlagEnv(*showDiffFlag, "ARTSYNC_SHOW_DIFF")
 	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE")
+	generatejson := getFlagEnv(*generatejsonFlag, "ARTSYNC_GENERATE_JSON")
 	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT")
 	importGroups := getFlagEnv(*importGroupsFlag, "ARTSYNC_IMPORT_LDAP_GROUPS_FILENAME")
 	onlyGenerateMatchingRepos := getFlagEnv(*onlyGenerateMatchingReposFlag, "ARTSYNC_ONLY_GENERATE_MATCHING")
@@ -44,7 +45,6 @@ func main() {
 	split := getFlagEnv(*splitFlag, "ARTSYNC_SPLIT")
 	createUsers := getFlagEnv(*createUsersFlag, "ARTSYNC_CREATE_USERS")
 	overwrite := getFlagEnv(*overwriteFlag, "ARTSYNC_OVERWRITE")
-	generateyaml := getFlagEnv(*generateyamlFlag, "ARTSYNC_GENERATE_YAML")
 
 	args := flag.Args()
 	if len(args) < 3 || args[0] == "" || args[1] == "" || args[2] == "" {
@@ -69,6 +69,10 @@ func main() {
 		fmt.Println("Error: -c flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
+	if !generate && generatejson {
+		fmt.Println("Error: -j flag can only be used together with -g flag.")
+		os.Exit(1)
+	}
 	if !generate && onlyGenerateMatchingRepos {
 		fmt.Println("Error: -m flag can only be used together with -g flag.")
 		os.Exit(1)
@@ -87,10 +91,6 @@ func main() {
 	}
 	if !generate && split {
 		fmt.Println("Error: -s flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && generateyaml {
-		fmt.Println("Error: -y flag can only be used together with -g flag.")
 		os.Exit(1)
 	}
 
@@ -143,7 +143,7 @@ func main() {
 	}
 
 	if generate {
-		err = Generate(repos, permissiondetails, useAllPermissionTargetsAsSource, onlyGenerateMatchingRepos, onlyGenerateCleanRepos, allowRenamedPermissions, combineRepos, split, repofiles[0], generateyaml)
+		err = Generate(repos, permissiondetails, useAllPermissionTargetsAsSource, onlyGenerateMatchingRepos, onlyGenerateCleanRepos, allowRenamedPermissions, combineRepos, split, repofiles[0], generatejson)
 		if err != nil {
 			fmt.Printf("Error generating: %v\n", err)
 			os.Exit(1)
@@ -313,7 +313,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-k] [-l] [-m] [-p] [-q] [-r] [-s] [-u] [-w] [-y] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-j] [-k] [-l] [-m] [-p] [-q] [-r] [-s] [-u] [-w] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")
