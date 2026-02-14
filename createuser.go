@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/go-ldap/ldap/v3"
 )
 
 // For mock testing.
@@ -21,32 +19,15 @@ func CreateUser(
 	ldapPassword string,
 	username string,
 	ldapSettings []ArtifactoryLDAPSettings,
-	ldapGroupSettings []ArtifactoryLDAPGroupSettings,
 	dryRun bool) (bool, error) {
 
 	if len(ldapSettings) == 0 {
 		return false, fmt.Errorf("missing LDAP settings")
 	}
-	if len(ldapGroupSettings) == 0 {
-		return false, fmt.Errorf("missing LDAP group settings")
-	}
 
-	for _, ldapGroupSettingsSingle := range ldapGroupSettings {
-		settingsIndex := -1
-		for i := range ldapSettings {
-			if ldapSettings[i].Key == ldapGroupSettingsSingle.EnabledLdap {
-				settingsIndex = i
-				break
-			}
-		}
-		if settingsIndex == -1 {
-			return false, fmt.Errorf("LDAP settings named '%s' not found", ldapGroupSettingsSingle.EnabledLdap)
-		}
-		ldapSettingsSingle := ldapSettings[settingsIndex]
-
-		found := false
-		var entries []*ldap.Entry
-		var err error
+	for _, ldapSettingsSingle := range ldapSettings {
+		fmt.Printf("Creating user: '%s', ldap settings: %d, settings name: '%s'\n",
+			username, len(ldapSettings), ldapSettingsSingle.Key)
 
 		basednParts := strings.SplitSeq(ldapSettingsSingle.Search.SearchBase, "|")
 		for basednPart := range basednParts {
@@ -65,48 +46,51 @@ func CreateUser(
 
 			filter := strings.ReplaceAll(ldapSettingsSingle.Search.SearchFilter, "{0}", username)
 
-			entries, err = queryldapCreateUserFn(
+			entries, err := queryldapCreateUserFn(
 				ldapSettingsSingle.LdapUrl,
 				basedn,
 				filter,
 				ldapUsername,
 				ldapPassword,
-				[]string{ldapSettingsSingle.EmailAttribute})
+				[]string{ldapSettingsSingle.EmailAttribute, "userPrincipalName"})
 			if err != nil {
 				return false, fmt.Errorf("query failed: %w", err)
 			}
 
+			fmt.Printf("Entries: %d\n", len(entries))
+
+			if len(entries) < 1 {
+				continue
+			}
 			if len(entries) > 1 {
 				return false, fmt.Errorf("error: multiple DNs found for user: '%s' in base dn: '%s'", username, basedn)
 			}
+			entry := entries[0]
 
-			if len(entries) == 1 {
-				found = true
-				break
+			values := entry.GetAttributeValues(ldapSettingsSingle.EmailAttribute)
+			emailaddress := ""
+			if len(values) >= 1 {
+				emailaddress = values[0]
 			}
-		}
+			if emailaddress == "" {
+				values = entry.GetAttributeValues("userPrincipalName")
+				if len(values) >= 1 {
+					emailaddress = values[0]
+				}
+			}
+			fmt.Printf("emailaddress: '%s'\n", emailaddress)
 
-		if !found {
-			fmt.Printf("Didn't find user: '%s'\n", username)
-			return false, nil
-		}
+			err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
+			if err != nil {
+				return false, fmt.Errorf("creating failed: %w", err)
+			}
 
-		entry := entries[0]
-
-		values := entry.GetAttributeValues(ldapSettingsSingle.EmailAttribute)
-		emailaddress := ""
-		if len(values) >= 1 {
-			emailaddress = values[0]
-		}
-		fmt.Printf("emailaddress: '%s'\n", emailaddress)
-
-		err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
-		if err != nil {
-			return false, fmt.Errorf("creating failed: %w", err)
+			return true, nil
 		}
 	}
 
-	return true, nil
+	fmt.Printf("Didn't find user: '%s'\n", username)
+	return false, nil
 }
 
 func createSingleUser(client *http.Client, baseurl, token, username, emailaddress string, dryRun bool) error {

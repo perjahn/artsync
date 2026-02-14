@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,11 +82,11 @@ func validateRepo(
 	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, error) {
 
 	if repo.Name == "" {
-		return nil, nil, fmt.Errorf("missing name for repo")
+		return allusers, allgroups, fmt.Errorf("missing name for repo")
 	}
 
 	if !isValidRepoName(repo.Name) {
-		return nil, nil, fmt.Errorf("invalid name for repo")
+		return allusers, allgroups, fmt.Errorf("invalid name for repo")
 	}
 
 	hasErrors := false
@@ -114,7 +113,7 @@ func validateRepo(
 	}
 
 	if hasErrors {
-		return nil, nil, fmt.Errorf("see errors above for details")
+		return allusers, allgroups, fmt.Errorf("see errors above for details")
 	}
 
 	return allusers, allgroups, nil
@@ -757,7 +756,7 @@ func checkUsersAndGroups(
 					ldapConfig.ArtifactoryPassword,
 					dryRun)
 				if errGroup != nil {
-					errGroup = fmt.Errorf("importing group '%s' failed: %w", ug, errGroup)
+					fmt.Printf("Importing group '%s' failed: %v\n", ug, errGroup)
 				}
 				if errGroup == nil && importedGroup {
 					allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
@@ -765,7 +764,7 @@ func checkUsersAndGroups(
 				}
 			}
 
-			if createUsers && !importedGroup {
+			if createUsers && !importedGroup && errGroup == nil {
 				fmt.Printf("'%s': Creating user: '%s'\n", reponame, ug)
 				createdUser, errUser = CreateUser(
 					client,
@@ -775,10 +774,9 @@ func checkUsersAndGroups(
 					ldapConfig.LdapPassword,
 					ug,
 					ldapConfig.Ldapsettings,
-					ldapConfig.Ldapgroupsettings,
 					dryRun)
 				if errUser != nil {
-					errUser = fmt.Errorf("creating user '%s' failed: %w", ug, errUser)
+					fmt.Printf("Creating user '%s' failed: %v\n", ug, errUser)
 				}
 				if errUser == nil && createdUser {
 					allusers = append(allusers, ArtifactoryUser{Username: ug})
@@ -787,12 +785,7 @@ func checkUsersAndGroups(
 			}
 
 			if errGroup != nil || errUser != nil || (!createdUser && !importedGroup) {
-				joined := errors.Join(errGroup, errUser)
-				if joined != nil {
-					errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s': %w", ug, joined))
-				} else {
-					errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s'", ug))
-				}
+				errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s'", ug))
 			}
 		}
 	}
