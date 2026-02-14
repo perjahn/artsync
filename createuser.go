@@ -22,92 +22,88 @@ func CreateUser(
 	username string,
 	ldapSettings []ArtifactoryLDAPSettings,
 	ldapGroupSettings []ArtifactoryLDAPGroupSettings,
-	ldapGroupSettingsName string,
 	dryRun bool) (bool, error) {
 
-	index := -1
-	for i := range ldapGroupSettings {
-		if ldapGroupSettings[i].Name == ldapGroupSettingsName {
-			index = i
-			break
-		}
+	if len(ldapSettings) == 0 {
+		return false, fmt.Errorf("missing LDAP settings")
 	}
-	if index == -1 {
-		return false, fmt.Errorf("LDAP group settings named '%s' not found", ldapGroupSettingsName)
+	if len(ldapGroupSettings) == 0 {
+		return false, fmt.Errorf("missing LDAP group settings")
 	}
-	ldapGroupSettingsSingle := ldapGroupSettings[index]
 
-	index = -1
-	for i := range ldapSettings {
-		if ldapSettings[i].Key == ldapGroupSettingsSingle.EnabledLdap {
-			index = i
-			break
-		}
-	}
-	if index == -1 {
-		return false, fmt.Errorf("LDAP settings named '%s' not found", ldapGroupSettingsSingle.EnabledLdap)
-	}
-	ldapSettingsSingle := ldapSettings[index]
-
-	found := false
-	var entries []*ldap.Entry
-	var err error
-
-	basednParts := strings.SplitSeq(ldapSettingsSingle.Search.SearchBase, "|")
-	for basednPart := range basednParts {
-		var basedn string
-
-		if strings.Count(ldapSettingsSingle.LdapUrl, "/") >= 3 {
-			parts := strings.SplitN(ldapSettingsSingle.LdapUrl, "/", 4)
-			if ldapSettingsSingle.Search.SearchBase != "" {
-				basedn = fmt.Sprintf("%s,%s", basednPart, parts[3])
-			} else {
-				basedn = parts[3]
+	for _, ldapGroupSettingsSingle := range ldapGroupSettings {
+		settingsIndex := -1
+		for i := range ldapSettings {
+			if ldapSettings[i].Key == ldapGroupSettingsSingle.EnabledLdap {
+				settingsIndex = i
+				break
 			}
-		} else {
-			basedn = basednPart
+		}
+		if settingsIndex == -1 {
+			return false, fmt.Errorf("LDAP settings named '%s' not found", ldapGroupSettingsSingle.EnabledLdap)
+		}
+		ldapSettingsSingle := ldapSettings[settingsIndex]
+
+		found := false
+		var entries []*ldap.Entry
+		var err error
+
+		basednParts := strings.SplitSeq(ldapSettingsSingle.Search.SearchBase, "|")
+		for basednPart := range basednParts {
+			var basedn string
+
+			if strings.Count(ldapSettingsSingle.LdapUrl, "/") >= 3 {
+				parts := strings.SplitN(ldapSettingsSingle.LdapUrl, "/", 4)
+				if ldapSettingsSingle.Search.SearchBase != "" {
+					basedn = fmt.Sprintf("%s,%s", basednPart, parts[3])
+				} else {
+					basedn = parts[3]
+				}
+			} else {
+				basedn = basednPart
+			}
+
+			filter := strings.ReplaceAll(ldapSettingsSingle.Search.SearchFilter, "{0}", username)
+
+			entries, err = queryldapCreateUserFn(
+				ldapSettingsSingle.LdapUrl,
+				basedn,
+				filter,
+				ldapUsername,
+				ldapPassword,
+				[]string{ldapSettingsSingle.EmailAttribute})
+			if err != nil {
+				return false, fmt.Errorf("query failed: %w", err)
+			}
+
+			if len(entries) > 1 {
+				return false, fmt.Errorf("error: multiple DNs found for user: '%s' in base dn: '%s'", username, basedn)
+			}
+
+			if len(entries) == 1 {
+				found = true
+				break
+			}
 		}
 
-		filter := strings.ReplaceAll(ldapSettingsSingle.Search.SearchFilter, "{0}", username)
+		if !found {
+			fmt.Printf("Didn't find user: '%s'\n", username)
+			return false, nil
+		}
 
-		entries, err = queryldapCreateUserFn(
-			ldapSettingsSingle.LdapUrl,
-			basedn,
-			filter,
-			ldapUsername,
-			ldapPassword,
-			[]string{ldapSettingsSingle.EmailAttribute})
+		entry := entries[0]
+
+		values := entry.GetAttributeValues(ldapSettingsSingle.EmailAttribute)
+		emailaddress := ""
+		if len(values) >= 1 {
+			emailaddress = values[0]
+		}
+		fmt.Printf("emailaddress: '%s'\n", emailaddress)
+
+		err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
 		if err != nil {
-			return false, fmt.Errorf("query failed: %w", err)
+			return false, fmt.Errorf("creating failed: %w", err)
 		}
-
-		if len(entries) > 1 {
-			return false, fmt.Errorf("error: multiple DNs found for user: '%s' in base dn: '%s'", username, basedn)
-		}
-
-		if len(entries) == 1 {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		fmt.Printf("Didn't find user: '%s'\n", username)
-		return false, nil
-	}
-
-	entry := entries[0]
-
-	values := entry.GetAttributeValues(ldapSettingsSingle.EmailAttribute)
-	emailaddress := ""
-	if len(values) >= 1 {
-		emailaddress = values[0]
-	}
-	fmt.Printf("emailaddress: '%s'\n", emailaddress)
-
-	err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
-	if err != nil {
-		return false, fmt.Errorf("creating failed: %w", err)
 	}
 
 	return true, nil

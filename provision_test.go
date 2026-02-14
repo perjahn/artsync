@@ -325,7 +325,6 @@ func TestProvisionLdap(t *testing.T) {
 		ImportGroups:        true,
 		LdapUsername:        "ldapusername",
 		LdapPassword:        "ldappassword",
-		Groupsettingsname:   "ldapgroupsettingsname",
 		ArtifactoryUsername: "artifactoryusername",
 		ArtifactoryPassword: "artifactorypassword",
 		Ldapsettings: []ArtifactoryLDAPSettings{
@@ -500,7 +499,6 @@ func TestProvisionLdapFail(t *testing.T) {
 		ImportGroups:        true,
 		LdapUsername:        "ldapusername",
 		LdapPassword:        "ldappassword",
-		Groupsettingsname:   "ldapgroupsettingsname",
 		ArtifactoryUsername: "artifactoryusername",
 		ArtifactoryPassword: "artifactorypassword",
 		Ldapsettings: []ArtifactoryLDAPSettings{

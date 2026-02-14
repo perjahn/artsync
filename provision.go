@@ -753,7 +753,6 @@ func checkUsersAndGroups(
 					ug,
 					ldapConfig.Ldapsettings,
 					ldapConfig.Ldapgroupsettings,
-					ldapConfig.Groupsettingsname,
 					ldapConfig.ArtifactoryUsername,
 					ldapConfig.ArtifactoryPassword,
 					dryRun)
@@ -777,7 +776,6 @@ func checkUsersAndGroups(
 					ug,
 					ldapConfig.Ldapsettings,
 					ldapConfig.Ldapgroupsettings,
-					ldapConfig.Groupsettingsname,
 					dryRun)
 				if errUser != nil {
 					errUser = fmt.Errorf("creating user '%s' failed: %w", ug, errUser)

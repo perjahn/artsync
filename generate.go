@@ -158,11 +158,22 @@ func Generate(
 func includeOnlyMatchingRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails) bool {
 	for _, permission := range permissiondetails {
 		if permission.Name == repokey {
-			if len(permission.Resources.Artifact.Targets) != 1 {
+			if len(permission.Resources.Artifact.Targets) < 1 {
+				fmt.Printf("Ignoring repo: '%s'. The permission target named the same as the repo, isn't connected to any repo.\n", repokey)
 				return false
 			}
+			if len(permission.Resources.Artifact.Targets) > 1 {
+				fmt.Printf("Ignoring repo: '%s'. The permission target named the same as the repo, is used by multiple repos.\n", repokey)
+				return false
+			}
+
 			_, exists := permission.Resources.Artifact.Targets[repokey]
-			return exists
+			if exists {
+				return true
+			} else {
+				fmt.Printf("Ignoring repo: '%s'. The permission target named the same as the repo, isn't connected to the matching repo.\n", repokey)
+				return false
+			}
 		}
 	}
 	return false
@@ -171,11 +182,22 @@ func includeOnlyMatchingRepos(repokey string, permissiondetails []ArtifactoryPer
 func includeOnlyMatchingAndRenamedRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails) (string, bool) {
 	for _, permission := range permissiondetails {
 		if permission.Name == repokey {
-			if len(permission.Resources.Artifact.Targets) != 1 {
+			if len(permission.Resources.Artifact.Targets) < 1 {
+				fmt.Printf("Ignoring repo: '%s'. The permission target named the same as the repo, isn't connected to any repo.\n", repokey)
 				return "", false
 			}
+			if len(permission.Resources.Artifact.Targets) > 1 {
+				fmt.Printf("Ignoring repo: '%s'. The permission target named the same as the repo, is used by multiple repos.\n", repokey)
+				return "", false
+			}
+
 			_, exists := permission.Resources.Artifact.Targets[repokey]
-			return "", exists
+			if exists {
+				return "", true
+			} else {
+				fmt.Printf("Ignoring repo: '%s'. The permission target named the same as the repo, isn't connected to the matching repo.\n", repokey)
+				return "", false
+			}
 		}
 	}
 
@@ -187,11 +209,16 @@ func includeOnlyMatchingAndRenamedRepos(repokey string, permissiondetails []Arti
 		}
 	}
 
-	if len(permissionNames) == 1 {
-		return permissionNames[0], true
+	if len(permissionNames) < 1 {
+		fmt.Printf("Ignoring repo: '%s'. No non-shared connected permission target.\n", repokey)
+		return "", false
+	}
+	if len(permissionNames) > 1 {
+		fmt.Printf("Ignoring repo: '%s'. Too many permission targets (%d) connected to the repo: %q.\n", repokey, len(permissionNames), permissionNames)
+		return "", false
 	}
 
-	return "", false
+	return permissionNames[0], true
 }
 
 func includeOnlyCleanRepos(repokey string, permissiondetails []ArtifactoryPermissionDetails, useAllPermissionTargetsAsSource bool) bool {

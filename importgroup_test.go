@@ -12,18 +12,16 @@ import (
 func TestImportGroup(t *testing.T) {
 	tests := []struct {
 		groupName         string
-		groupSettingsName string
 		ldapSettings      []ArtifactoryLDAPSettings
 		ldapGroupSettings []ArtifactoryLDAPGroupSettings
 		dryRun            bool
 		shouldErr         bool
 	}{
 		// Minimal
-		{"", "", []ArtifactoryLDAPSettings{}, []ArtifactoryLDAPGroupSettings{}, false, true},
+		{"", []ArtifactoryLDAPSettings{}, []ArtifactoryLDAPGroupSettings{}, false, true},
 		// Import group
 		{
 			"test-ldapsettings",
-			"test-ldapgroupsettings",
 			[]ArtifactoryLDAPSettings{
 				{
 					Key:     "test-ldapsettings",
@@ -85,7 +83,7 @@ func TestImportGroup(t *testing.T) {
 			return []*ldap.Entry{entry}, nil
 		}
 
-		_, err := ImportGroup(client, "", "", "", tc.groupName, tc.ldapSettings, tc.ldapGroupSettings, tc.groupSettingsName, "", "", tc.dryRun)
+		_, err := ImportGroup(client, "", "", "", tc.groupName, tc.ldapSettings, tc.ldapGroupSettings, "", "", tc.dryRun)
 		if (tc.shouldErr && err == nil) || (!tc.shouldErr && err != nil) {
 			t.Errorf("ImportGroup (%d/%d): error = %v", i+1, len(tests), err)
 		}
