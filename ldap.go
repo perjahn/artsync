@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/go-ldap/ldap/v3"
 )
 
 func queryldap(server, baseDN, filter, bindDN, bindPW string, attrs []string) ([]*ldap.Entry, error) {
-	fmt.Printf("server: '%s', baseDN: '%s', filter: '%s', bindDN: '%s'\n", server, baseDN, filter, bindDN)
+	log.Printf("server: '%s', baseDN: '%s', filter: '%s', bindDN: '%s'\n", server, baseDN, filter, bindDN)
 
 	ldapconn, err := ldap.DialURL(server)
 	if err != nil {
@@ -38,7 +39,7 @@ func queryldap(server, baseDN, filter, bindDN, bindPW string, attrs []string) ([
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	fmt.Printf("Got %d entries, %d controls, %d referrals\n", len(sr.Entries), len(sr.Controls), len(sr.Referrals))
+	log.Printf("Got %d entries, %d controls, %d referrals\n", len(sr.Entries), len(sr.Controls), len(sr.Referrals))
 
 	return sr.Entries, nil
 }

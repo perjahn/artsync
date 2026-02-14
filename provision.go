@@ -1,13 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"os"
-	"regexp"
 	"slices"
 	"strings"
 )
@@ -19,8 +17,14 @@ var ignoredNoDiffRepoCount int
 var ignoredInvalidPermissionCount int
 var ignoredNoDiffPermissionCount int
 var ignoredDuplicatePermissionCount int
-var importGroupsCount int
-var createUsersCount int
+
+var createdUserCount int
+var importedGroupCount int
+
+var createdRepoCount int
+var updatedRepoCount int
+var createdPermissionCount int
+var updatedPermissionCount int
 
 func Provision(
 	client *http.Client,
@@ -36,24 +40,27 @@ func Provision(
 	ldapConfig LdapConfig,
 	dryRun bool) error {
 
+	if ldapConfig.ImportUsersAndGroups {
+		accessToken, refreshToken, err := getUITokens(client, baseurl, ldapConfig.ArtifactoryUsername, ldapConfig.ArtifactoryPassword)
+		if err != nil {
+			return fmt.Errorf("unable to obtain UI tokens for Artifactory, cannot import ldap groups: %w", err)
+		}
+
+		reposToProvision, allusers, allgroups = provisionUsersAndGroups(client, baseurl, token, reposToProvision, allusers, allgroups, ldapConfig, accessToken, refreshToken, dryRun)
+	}
+
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
+
 	for _, repo := range reposToProvision {
-		var err error
-		allusers, allgroups, err = validateRepo(client, baseurl, token, repo, allusers, allgroups, ldapConfig, dryRun)
+		err := provisionRepo(client, baseurl, token, repo, allrepos, dryRun)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 			ignoredInvalidRepoCount++
 		} else {
-			err := provisionRepo(client, baseurl, token, repo, allrepos, dryRun)
+			err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, showDiff, allowpatterns, dryRun)
 			if err != nil {
-				fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
-				ignoredInvalidRepoCount++
-			} else {
-				err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, showDiff, allowpatterns, dryRun)
-				if err != nil {
-					fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
-					ignoredInvalidPermissionCount++
-				}
+				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
+				ignoredInvalidPermissionCount++
 			}
 		}
 	}
@@ -65,58 +72,159 @@ func Provision(
 	fmt.Printf("Ignored invalid permission targets: %d\n", ignoredInvalidPermissionCount)
 	fmt.Printf("Ignored no diff permission targets: %d\n", ignoredNoDiffPermissionCount)
 	fmt.Printf("Ignored duplicate permissions: %d\n", ignoredDuplicatePermissionCount)
-	fmt.Printf("Imported groups: %d\n", importGroupsCount)
-	fmt.Printf("Created users: %d\n", createUsersCount)
+
+	fmt.Printf("Created users: %d\n", createdUserCount)
+	fmt.Printf("Imported groups: %d\n", importedGroupCount)
+
+	fmt.Printf("Created repos: %d\n", createdRepoCount)
+	fmt.Printf("Updated repos: %d\n", updatedRepoCount)
+	fmt.Printf("Created permissions: %d\n", createdPermissionCount)
+	fmt.Printf("Updated permissions: %d\n", updatedPermissionCount)
 
 	return nil
 }
 
-func validateRepo(
+func provisionUsersAndGroups(
 	client *http.Client,
 	baseurl string,
 	token string,
-	repo Repo,
+	reposToProvision []Repo,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	ldapConfig LdapConfig,
-	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, error) {
+	accessToken string,
+	refreshToken string,
+	dryRun bool) ([]Repo, []ArtifactoryUser, []ArtifactoryGroup) {
 
-	if repo.Name == "" {
-		return allusers, allgroups, fmt.Errorf("missing name for repo")
-	}
+	var usersAndGroups []string
 
-	if !isValidRepoName(repo.Name) {
-		return allusers, allgroups, fmt.Errorf("invalid name for repo")
-	}
-
-	hasErrors := false
-
-	for _, check := range []struct {
-		usersAndGroups []string
-		perm           string
-	}{
-		{repo.Read, "read"},
-		{repo.Annotate, "annotate"},
-		{repo.Write, "write"},
-		{repo.Delete, "delete"},
-		{repo.Manage, "manage"},
-		{repo.Scan, "scan"},
-	} {
-		var errs []error
-		allusers, allgroups, errs = checkUsersAndGroups(client, baseurl, token, repo.Name, check.usersAndGroups, allusers, allgroups, ldapConfig, dryRun)
-		if len(errs) > 0 {
-			for _, err := range errs {
-				fmt.Printf("'%s': Permission '%s': %v\n", repo.Name, check.perm, err)
-			}
-			hasErrors = true
+	for _, repo := range reposToProvision {
+		for _, repoUsersAndGroups := range [][]string{
+			repo.Read,
+			repo.Annotate,
+			repo.Write,
+			repo.Delete,
+			repo.Manage,
+			repo.Scan,
+		} {
+			usersAndGroups = append(usersAndGroups, repoUsersAndGroups...)
 		}
 	}
 
-	if hasErrors {
-		return allusers, allgroups, fmt.Errorf("see errors above for details")
+	slices.Sort(usersAndGroups)
+
+	fmt.Printf("Got %d total user/group permissions to provision.\n", len(usersAndGroups))
+
+	for i := 0; i < len(usersAndGroups); i++ {
+		if i > 0 && strings.EqualFold(usersAndGroups[i], usersAndGroups[i-1]) {
+			usersAndGroups = slices.Delete(usersAndGroups, i, i+1)
+			i--
+		}
 	}
 
-	return allusers, allgroups, nil
+	fmt.Printf("Got %d unique users/groups to provision.\n", len(usersAndGroups))
+	fmt.Printf("Got %d existing users.\n", len(allusers))
+	fmt.Printf("Got %d existing groups.\n", len(allgroups))
+
+	var newUsersAndGroups []string
+
+	for _, ug := range usersAndGroups {
+		userExists := slices.ContainsFunc(allusers, func(u ArtifactoryUser) bool {
+			return u.Username == ug
+		})
+		groupExists := slices.ContainsFunc(allgroups, func(g ArtifactoryGroup) bool {
+			return g.GroupName == ug
+		})
+
+		if !userExists && !groupExists {
+			log.Printf("No existing user or group found, will attempt to import user/group: '%s'\n", ug)
+			newUsersAndGroups = append(newUsersAndGroups, ug)
+		} else if userExists && groupExists {
+			var repos []string
+			for i := 0; i < len(reposToProvision); i++ {
+				repo := reposToProvision[i]
+				if slices.Contains(repo.Read, ug) ||
+					slices.Contains(repo.Annotate, ug) ||
+					slices.Contains(repo.Write, ug) ||
+					slices.Contains(repo.Delete, ug) ||
+					slices.Contains(repo.Manage, ug) ||
+					slices.Contains(repo.Scan, ug) {
+					repos = append(repos, repo.Name)
+					ignoredInvalidRepoCount++
+					reposToProvision = slices.Delete(reposToProvision, i, i+1)
+					i--
+				}
+			}
+			fmt.Printf("Warning: Both user and group found, will ignore repos with user/group '%s': %v\n", ug, repos)
+		}
+	}
+
+	for _, ug := range newUsersAndGroups {
+		var errGroup, errUser error
+		var importedGroup, createdUser bool
+
+		importedGroup, errGroup = ImportGroup(
+			client,
+			baseurl,
+			ldapConfig.LdapUsername,
+			ldapConfig.LdapPassword,
+			ug,
+			ldapConfig.Ldapsettings,
+			ldapConfig.Ldapgroupsettings,
+			accessToken,
+			refreshToken,
+			dryRun)
+		if errGroup != nil {
+			fmt.Printf("Importing group '%s' failed: %v\n", ug, errGroup)
+		}
+		if errGroup == nil && importedGroup {
+			fmt.Printf("Imported group '%s'\n", ug)
+			allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
+			importedGroupCount++
+		}
+
+		if !importedGroup && errGroup == nil {
+			createdUser, errUser = CreateUser(
+				client,
+				baseurl,
+				token,
+				ldapConfig.LdapUsername,
+				ldapConfig.LdapPassword,
+				ug,
+				ldapConfig.Ldapsettings,
+				dryRun)
+			if errUser != nil {
+				fmt.Printf("Creating user '%s' failed: %v\n", ug, errUser)
+			}
+			if errUser == nil && createdUser {
+				fmt.Printf("Created user '%s'\n", ug)
+				allusers = append(allusers, ArtifactoryUser{Username: ug})
+				createdUserCount++
+			}
+		}
+
+		if !importedGroup && !createdUser {
+			for i := 0; i < len(reposToProvision); i++ {
+				repo := reposToProvision[i]
+				if slices.Contains(repo.Read, ug) ||
+					slices.Contains(repo.Annotate, ug) ||
+					slices.Contains(repo.Write, ug) ||
+					slices.Contains(repo.Delete, ug) ||
+					slices.Contains(repo.Manage, ug) ||
+					slices.Contains(repo.Scan, ug) {
+					fmt.Printf("'%s': Ignoring repo due to missing user/group: '%s'\n", repo.Name, ug)
+
+					ignoredInvalidRepoCount++
+					reposToProvision = slices.Delete(reposToProvision, i, i+1)
+					i--
+				}
+			}
+		}
+	}
+
+	fmt.Printf("Created users: %d, imported groups: %d. (%d/%d)\n", createdUserCount, importedGroupCount, createdUserCount+importedGroupCount, len(newUsersAndGroups))
+
+	return reposToProvision, allusers, allgroups
 }
 
 func provisionRepo(
@@ -243,6 +351,7 @@ func updateExistingRepo(
 			fmt.Printf("'%s': Updated repo successfully.\n", repo.Name)
 		}
 	}
+	updatedRepoCount++
 
 	return nil
 }
@@ -310,6 +419,7 @@ func createNewRepo(
 			fmt.Printf("'%s': Created repo successfully.\n", repo.Name)
 		}
 	}
+	createdRepoCount++
 
 	return nil
 }
@@ -388,26 +498,25 @@ func updateExistingPermission(
 	dryRun bool) error {
 
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Users, users) {
-		printDiff(repo, permissionName, existingPermission.Resources.Artifact.Actions.Users, users, "Users")
+		printDiffPermissions(repo, permissionName, existingPermission.Resources.Artifact.Actions.Users, users, "Users")
 	}
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Groups, groups) {
-		printDiff(repo, permissionName, existingPermission.Resources.Artifact.Actions.Groups, groups, "Groups")
+		printDiffPermissions(repo, permissionName, existingPermission.Resources.Artifact.Actions.Groups, groups, "Groups")
 	}
 
 	url := fmt.Sprintf("%s/access/api/v2/permissions/%s/artifact", baseurl, permissionName)
-
-	targets := make(map[string]ArtifactoryPermissionDetailsTarget)
-	targets[repo.Name] = ArtifactoryPermissionDetailsTarget{
-		existingPermission.Resources.Artifact.Targets[repo.Name].IncludePatterns,
-		existingPermission.Resources.Artifact.Targets[repo.Name].ExcludePatterns,
-	}
 
 	artifactorypermissiontarget := ArtifactoryPermissionDetailsArtifact{
 		Actions: ArtifactoryPermissionDetailsActions{
 			Users:  users,
 			Groups: groups,
 		},
-		Targets: targets,
+		Targets: map[string]ArtifactoryPermissionDetailsTarget{
+			repo.Name: {
+				existingPermission.Resources.Artifact.Targets[repo.Name].IncludePatterns,
+				existingPermission.Resources.Artifact.Targets[repo.Name].ExcludePatterns,
+			},
+		},
 	}
 
 	json, err := json.Marshal(artifactorypermissiontarget)
@@ -422,35 +531,13 @@ func updateExistingPermission(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
+	artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
 	if showDiff {
-		artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
-		PrintDiff(artifactjsonsource, string(json))
-	} else {
-		var out bytes.Buffer
-
-		origGetWriterFn := GetWriterFn
-		defer func() { GetWriterFn = origGetWriterFn }()
-
-		GetWriterFn = func() io.Writer {
-			return &out
-		}
-
-		artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
-		PrintDiff(artifactjsonsource, string(json))
-
-		difftext := out.String()
-		if difftext != "" {
-			file, err := os.OpenFile("jsondiff.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				return fmt.Errorf("error opening file for append: %v", err)
-			}
-			_, err = file.WriteString(difftext)
-			if err != nil {
-				return fmt.Errorf("error writing diff text: %v", err)
-			}
-			file.Close()
-		}
+		difftext, _ := PrintDiff(artifactjsonsource, string(json), true)
+		fmt.Printf("%s", difftext)
 	}
+	difftext, _ := PrintDiff(artifactjsonsource, string(json), false)
+	log.Printf("Permission (existing) diff: '%s'\n%s", permissionName, difftext)
 
 	if !dryRun {
 		resp, err := client.Do(req)
@@ -471,6 +558,7 @@ func updateExistingPermission(
 			fmt.Printf("'%s': Updated permission target successfully.\n", permissionName)
 		}
 	}
+	updatedPermissionCount++
 
 	return nil
 }
@@ -486,16 +574,10 @@ func createNewPermission(
 	groups map[string][]string,
 	dryRun bool) error {
 
-	printDiff(repo, permissionName, map[string][]string{}, users, "Users")
-	printDiff(repo, permissionName, map[string][]string{}, groups, "Groups")
+	printDiffPermissions(repo, permissionName, map[string][]string{}, users, "Users")
+	printDiffPermissions(repo, permissionName, map[string][]string{}, groups, "Groups")
 
 	url := fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
-
-	targets := make(map[string]ArtifactoryPermissionDetailsTarget)
-	targets[permissionName] = ArtifactoryPermissionDetailsTarget{
-		IncludePatterns: []string{"**"},
-		ExcludePatterns: []string{},
-	}
 
 	artifactorypermissiontarget := ArtifactoryPermissionDetails{
 		Name: permissionName,
@@ -505,7 +587,12 @@ func createNewPermission(
 					Users:  users,
 					Groups: groups,
 				},
-				Targets: targets,
+				Targets: map[string]ArtifactoryPermissionDetailsTarget{
+					repo.Name: {
+						IncludePatterns: []string{"**"},
+						ExcludePatterns: []string{},
+					},
+				},
 			},
 		},
 	}
@@ -521,6 +608,8 @@ func createNewPermission(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+
+	log.Printf("Permission (new): '%s'\n%s\n", permissionName, string(json))
 
 	if !dryRun {
 		resp, err := client.Do(req)
@@ -541,13 +630,14 @@ func createNewPermission(
 			fmt.Printf("'%s': Created permission target successfully.\n", permissionName)
 		}
 	}
+	createdPermissionCount++
 
 	allpermissiondetails = append(allpermissiondetails, artifactorypermissiontarget)
 
 	return nil
 }
 
-func printDiff(repo Repo, permissionName string, old map[string][]string, new map[string][]string, kind string) {
+func printDiffPermissions(repo Repo, permissionName string, old map[string][]string, new map[string][]string, kind string) {
 	var names []string
 	for name := range old {
 		names = append(names, name)
@@ -699,105 +789,4 @@ func getUsersAndGroupsPermission(
 			}
 		}
 	}
-}
-
-func checkUsersAndGroups(
-	client *http.Client,
-	baseurl string,
-	token string,
-	reponame string,
-	usersAndGroups []string,
-	allusers []ArtifactoryUser,
-	allgroups []ArtifactoryGroup,
-	ldapConfig LdapConfig,
-	dryRun bool) ([]ArtifactoryUser, []ArtifactoryGroup, []error) {
-
-	var errs []error
-
-	createUsers := ldapConfig.CreateUsers
-	importGroups := ldapConfig.ImportGroups
-
-	for _, ug := range usersAndGroups {
-		userExists := false
-		for _, u := range allusers {
-			if u.Username == ug {
-				userExists = true
-				break
-			}
-		}
-		groupExists := false
-		for _, g := range allgroups {
-			if g.GroupName == ug {
-				groupExists = true
-				break
-			}
-		}
-
-		if userExists && groupExists {
-			errs = append(errs, fmt.Errorf("both user and group exists with the name: '%s'", ug))
-			continue
-		}
-
-		if !userExists && !groupExists {
-			var errGroup, errUser error
-			var importedGroup, createdUser bool
-
-			if importGroups {
-				fmt.Printf("'%s': Importing group: '%s'\n", reponame, ug)
-				importedGroup, errGroup = ImportGroup(
-					client,
-					baseurl,
-					ldapConfig.LdapUsername,
-					ldapConfig.LdapPassword,
-					ug,
-					ldapConfig.Ldapsettings,
-					ldapConfig.Ldapgroupsettings,
-					ldapConfig.ArtifactoryUsername,
-					ldapConfig.ArtifactoryPassword,
-					dryRun)
-				if errGroup != nil {
-					fmt.Printf("Importing group '%s' failed: %v\n", ug, errGroup)
-				}
-				if errGroup == nil && importedGroup {
-					allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
-					importGroupsCount++
-				}
-			}
-
-			if createUsers && !importedGroup && errGroup == nil {
-				fmt.Printf("'%s': Creating user: '%s'\n", reponame, ug)
-				createdUser, errUser = CreateUser(
-					client,
-					baseurl,
-					token,
-					ldapConfig.LdapUsername,
-					ldapConfig.LdapPassword,
-					ug,
-					ldapConfig.Ldapsettings,
-					dryRun)
-				if errUser != nil {
-					fmt.Printf("Creating user '%s' failed: %v\n", ug, errUser)
-				}
-				if errUser == nil && createdUser {
-					allusers = append(allusers, ArtifactoryUser{Username: ug})
-					createUsersCount++
-				}
-			}
-
-			if errGroup != nil || errUser != nil || (!createdUser && !importedGroup) {
-				errs = append(errs, fmt.Errorf("no user or group exists with the name: '%s'", ug))
-			}
-		}
-	}
-
-	return allusers, allgroups, errs
-}
-
-func isValidRepoName(s string) bool {
-	if len(s) > 0 && (s[0] == ' ' || s[len(s)-1] == ' ') {
-		return false
-	}
-	pattern := "^[a-zA-Z0-9 -_]+$"
-	regex := regexp.MustCompile(pattern)
-	return regex.MatchString(s)
 }

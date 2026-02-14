@@ -3,17 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 )
-
-// For mock testing.
-func GetWriter() io.Writer {
-	return os.Stdout
-}
-
-var GetWriterFn = GetWriter
 
 func GetArtifactJson(json string) string {
 	pos1 := -1
@@ -67,29 +58,27 @@ func GetArtifactJson(json string) string {
 	return json[pos1:pos2]
 }
 
-func PrintDiff(oldstring string, newstring string) error {
-	w := GetWriterFn()
-
+func PrintDiff(oldstring string, newstring string, withAnsi bool) (string, error) {
 	var oldjsonObj map[string]any
 	err := json.Unmarshal([]byte(oldstring), &oldjsonObj)
 	if err != nil {
-		return fmt.Errorf("error unmarshalling old json: %v", err)
+		return "", fmt.Errorf("error unmarshalling old json: %v", err)
 	}
 
 	oldstring2, err := json.MarshalIndent(oldjsonObj, "", "  ")
 	if err != nil {
-		return fmt.Errorf("error marshalling old json: %v", err)
+		return "", fmt.Errorf("error marshalling old json: %v", err)
 	}
 
 	var newjsonObj map[string]any
 	err = json.Unmarshal([]byte(newstring), &newjsonObj)
 	if err != nil {
-		return fmt.Errorf("error unmarshalling new json: %v", err)
+		return "", fmt.Errorf("error unmarshalling new json: %v", err)
 	}
 
 	newstring2, err := json.MarshalIndent(newjsonObj, "", "  ")
 	if err != nil {
-		return fmt.Errorf("error marshalling new json: %v", err)
+		return "", fmt.Errorf("error marshalling new json: %v", err)
 	}
 
 	oldLines := strings.Split(string(oldstring2), "\n")
@@ -97,25 +86,26 @@ func PrintDiff(oldstring string, newstring string) error {
 
 	ops := diff(oldLines, newLines)
 
-	green := "\x1b[32m"
-	red := "\x1b[31m"
-	reset := "\x1b[0m"
-	if w != os.Stdout {
-		green = ""
-		red = ""
-		reset = ""
+	green := ""
+	red := ""
+	reset := ""
+	if withAnsi {
+		green = "\x1b[32m"
+		red = "\x1b[31m"
+		reset = "\x1b[0m"
 	}
 
+	var result strings.Builder
 	for _, op := range ops {
 		switch op.Type {
 		case '+':
-			fmt.Fprintf(w, "%s+ %s%s\n", green, op.Value, reset)
+			fmt.Fprintf(&result, "%s+ %s%s\n", green, op.Value, reset)
 		case '-':
-			fmt.Fprintf(w, "%s- %s%s\n", red, op.Value, reset)
+			fmt.Fprintf(&result, "%s- %s%s\n", red, op.Value, reset)
 		}
 	}
 
-	return nil
+	return result.String(), nil
 }
 
 type Operation struct {

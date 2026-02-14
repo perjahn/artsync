@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -26,7 +27,7 @@ func CreateUser(
 	}
 
 	for _, ldapSettingsSingle := range ldapSettings {
-		fmt.Printf("Creating user: '%s', ldap settings: %d, settings name: '%s'\n",
+		log.Printf("Creating user: '%s', ldap settings: %d, settings name: '%s'\n",
 			username, len(ldapSettings), ldapSettingsSingle.Key)
 
 		basednParts := strings.SplitSeq(ldapSettingsSingle.Search.SearchBase, "|")
@@ -57,7 +58,7 @@ func CreateUser(
 				return false, fmt.Errorf("query failed: %w", err)
 			}
 
-			fmt.Printf("Entries: %d\n", len(entries))
+			log.Printf("%s: %s: %d\n", ldapSettingsSingle.Key, basednPart, len(entries))
 
 			if len(entries) < 1 {
 				continue
@@ -78,7 +79,7 @@ func CreateUser(
 					emailaddress = values[0]
 				}
 			}
-			fmt.Printf("emailaddress: '%s'\n", emailaddress)
+			log.Printf("emailaddress: '%s'\n", emailaddress)
 
 			err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
 			if err != nil {
@@ -94,6 +95,8 @@ func CreateUser(
 }
 
 func createSingleUser(client *http.Client, baseurl, token, username, emailaddress string, dryRun bool) error {
+	fmt.Printf("Creating user: '%s'\n", username)
+
 	url := fmt.Sprintf("%s/access/api/v2/users", baseurl)
 
 	artifactoryUserRequest := ArtifactoryUserRequest{
@@ -130,7 +133,7 @@ func createSingleUser(client *http.Client, baseurl, token, username, emailaddres
 			fmt.Printf("Response body: '%s'\n", body)
 			return fmt.Errorf("error creating user")
 		} else {
-			fmt.Printf("'%s': Created user successfully.\n", username)
+			log.Printf("'%s': Created user successfully.\n", username)
 		}
 	}
 
