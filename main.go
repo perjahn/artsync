@@ -18,6 +18,7 @@ func main() {
 	provisionEmpty := flag.Bool("e", false, "Provision empty files.")
 	showDiffFlag := flag.Bool("f", false, "Show json diff, when applying permission targets.")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
+	useCacheFlag := flag.Bool("h", false, "Use local cache folder instead of artifactory api, when retrieving.")
 	generatejsonFlag := flag.Bool("j", false, "Generate output in json format.")
 	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
 	importGroupsFlag := flag.Bool("l", false, "Import missing groups from ldap.")
@@ -35,6 +36,7 @@ func main() {
 	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN")
 	showDiff := getFlagEnv(*showDiffFlag, "ARTSYNC_SHOW_DIFF")
 	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE")
+	useCache := getFlagEnv(*useCacheFlag, "ARTSYNC_USE_CACHE")
 	generatejson := getFlagEnv(*generatejsonFlag, "ARTSYNC_GENERATE_JSON")
 	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT")
 	importGroups := getFlagEnv(*importGroupsFlag, "ARTSYNC_IMPORT_LDAP_GROUPS_FILENAME")
@@ -136,7 +138,7 @@ func main() {
 		retrieveldapsettings = true
 	}
 
-	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, retrieveldapsettings)
+	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, retrieveldapsettings, useCache)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

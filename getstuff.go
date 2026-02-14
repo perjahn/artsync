@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 )
 
 func GetStuff(
 	client *http.Client,
 	baseurl string,
 	token string,
-	retrieveldapsettings bool) (
+	retrieveldapsettings bool,
+	usecache bool) (
 	[]ArtifactoryRepoDetailsResponse,
 	[]ArtifactoryUser,
 	[]ArtifactoryGroup,
@@ -22,51 +24,51 @@ func GetStuff(
 	[]ArtifactoryLDAPGroupSettings,
 	error) {
 
-	tmpfolder := "cache"
-	if _, err := os.Stat(tmpfolder); os.IsNotExist(err) {
-		fmt.Printf("Creating folder: '%s'\n", tmpfolder)
-		err = os.Mkdir(tmpfolder, 0755)
+	cachefolder := "cache"
+	if _, err := os.Stat(cachefolder); os.IsNotExist(err) {
+		fmt.Printf("Creating folder: '%s'\n", cachefolder)
+		err = os.Mkdir(cachefolder, 0755)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, fmt.Errorf("error creating folder '%s': %w", tmpfolder, err)
+			return nil, nil, nil, nil, nil, nil, fmt.Errorf("error creating folder '%s': %w", cachefolder, err)
 		}
 	}
 
-	repos, err := getRepos(client, baseurl, token, tmpfolder)
+	repos, err := getRepos(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo count: %d\n", len(repos))
 
-	repodetails, err := getRepoDetails(client, baseurl, token, repos, tmpfolder)
+	repodetails, err := getRepoDetails(client, baseurl, token, repos, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo details count: %d\n", len(repodetails))
 
-	permissions, err := getPermissions(client, baseurl, token, tmpfolder)
+	permissions, err := getPermissions(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Permissions count: %d\n", len(permissions))
 
-	users, err := getUsers(client, baseurl, token, tmpfolder)
+	users, err := getUsers(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("User count: %d\n", len(users))
 
-	groups, err := getGroups(client, baseurl, token, tmpfolder)
+	groups, err := getGroups(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Group count: %d\n", len(groups))
 
-	permissiondetails, err := getPermissionDetails(client, baseurl, token, permissions, tmpfolder)
+	permissiondetails, err := getPermissionDetails(client, baseurl, token, permissions, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -76,14 +78,14 @@ func GetStuff(
 	var ldapsettings []ArtifactoryLDAPSettings
 	var ldapgroupsettings []ArtifactoryLDAPGroupSettings
 	if retrieveldapsettings {
-		ldapsettings, err = getLDAPSettings(client, baseurl, token, tmpfolder)
+		ldapsettings, err = getLDAPSettings(client, baseurl, token, cachefolder, usecache)
 		if err != nil {
 			return nil, nil, nil, nil, nil, nil, err
 		}
 
 		fmt.Printf("LDAP settings count: %d\n", len(ldapsettings))
 
-		ldapgroupsettings, err = getLDAPGroupSettings(client, baseurl, token, tmpfolder)
+		ldapgroupsettings, err = getLDAPGroupSettings(client, baseurl, token, cachefolder, usecache)
 		if err != nil {
 			return nil, nil, nil, nil, nil, nil, err
 		}
@@ -94,9 +96,29 @@ func GetStuff(
 	return repodetails, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, nil
 }
 
-func getUsers(client *http.Client, baseurl string, token string, tmpfolder string) ([]ArtifactoryUser, error) {
-	var cursor string
+func getUsers(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryUser, error) {
 	var allusers []ArtifactoryUser
+	cachefilename := filepath.Join(cachefolder, "allusers.json")
+
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached users from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading users: %w", err)
+			}
+
+			err = json.Unmarshal(data, &allusers)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return allusers, nil
+		}
+	}
+
+	var cursor string
 
 	for {
 		var users []ArtifactoryUser
@@ -115,8 +137,7 @@ func getUsers(client *http.Client, baseurl string, token string, tmpfolder strin
 				return nil, fmt.Errorf("error generating json: %w", err)
 			}
 
-			outfile := fmt.Sprintf("%s/allusers.json", tmpfolder)
-			err = os.WriteFile(outfile, []byte(json), 0600)
+			err = os.WriteFile(cachefilename, []byte(json), 0600)
 			if err != nil {
 				return nil, fmt.Errorf("error saving users: %w", err)
 			}
@@ -167,9 +188,29 @@ func getUsersPage(client *http.Client, baseurl string, token string, cursor stri
 	return users.Users, users.Cursor, nil
 }
 
-func getGroups(client *http.Client, baseurl string, token string, tmpfolder string) ([]ArtifactoryGroup, error) {
-	var cursor string
+func getGroups(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryGroup, error) {
 	var allgroups []ArtifactoryGroup
+	cachefilename := filepath.Join(cachefolder, "allgroups.json")
+
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached groups from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading groups: %w", err)
+			}
+
+			err = json.Unmarshal(data, &allgroups)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return allgroups, nil
+		}
+	}
+
+	var cursor string
 
 	for {
 		var groups []ArtifactoryGroup
@@ -188,8 +229,7 @@ func getGroups(client *http.Client, baseurl string, token string, tmpfolder stri
 				return nil, fmt.Errorf("error generating json: %w", err)
 			}
 
-			outfile := fmt.Sprintf("%s/allgroups.json", tmpfolder)
-			err = os.WriteFile(outfile, []byte(json), 0600)
+			err = os.WriteFile(cachefilename, []byte(json), 0600)
 			if err != nil {
 				return nil, fmt.Errorf("error saving groups: %w", err)
 			}
@@ -240,7 +280,28 @@ func getGroupsPage(client *http.Client, baseurl string, token string, cursor str
 	return groups.Groups, groups.Cursor, nil
 }
 
-func getRepos(client *http.Client, baseurl string, token string, tmpfolder string) ([]ArtifactoryRepoResponse, error) {
+func getRepos(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryRepoResponse, error) {
+	var repos []ArtifactoryRepoResponse
+	cachefilename := filepath.Join(cachefolder, "allrepos.json")
+
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached repos from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading repos: %w", err)
+			}
+
+			err = json.Unmarshal(data, &repos)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return repos, nil
+		}
+	}
+
 	url := fmt.Sprintf("%s/artifactory/api/repositories", baseurl)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -266,13 +327,11 @@ func getRepos(client *http.Client, baseurl string, token string, tmpfolder strin
 		fmt.Printf("Response body: '%s'\n", body)
 	}
 
-	outfile := fmt.Sprintf("%s/allrepos.json", tmpfolder)
-	err = os.WriteFile(outfile, []byte(body), 0600)
+	err = os.WriteFile(cachefilename, []byte(body), 0600)
 	if err != nil {
 		return nil, fmt.Errorf("error saving response body: %w", err)
 	}
 
-	var repos []ArtifactoryRepoResponse
 	err = json.Unmarshal(body, &repos)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing response body: %w", err)
@@ -281,8 +340,27 @@ func getRepos(client *http.Client, baseurl string, token string, tmpfolder strin
 	return repos, nil
 }
 
-func getRepoDetails(client *http.Client, baseurl string, token string, repos []ArtifactoryRepoResponse, tmpfolder string) ([]ArtifactoryRepoDetailsResponse, error) {
+func getRepoDetails(client *http.Client, baseurl string, token string, repos []ArtifactoryRepoResponse, cachefolder string, usecache bool) ([]ArtifactoryRepoDetailsResponse, error) {
 	var allrepodetails []ArtifactoryRepoDetailsResponse
+	cachefilename := filepath.Join(cachefolder, "allrepodetails.json")
+
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached repo details from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading repo details: %w", err)
+			}
+
+			err = json.Unmarshal(data, &allrepodetails)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return allrepodetails, nil
+		}
+	}
 
 	fmt.Println("Getting Repo details...")
 
@@ -314,7 +392,7 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 			fmt.Printf("Response body: '%s'\n", body)
 		}
 
-		outfile := fmt.Sprintf("%s/allrepodetails1.json", tmpfolder)
+		outfile := fmt.Sprintf("%s/allrepodetails1.json", cachefolder)
 		err = os.WriteFile(outfile, []byte(body), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("error saving response body: %w", err)
@@ -337,8 +415,7 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 		return nil, fmt.Errorf("error generating json: %w", err)
 	}
 
-	outfile := fmt.Sprintf("%s/allrepodetails.json", tmpfolder)
-	err = os.WriteFile(outfile, []byte(string(json)), 0600)
+	err = os.WriteFile(cachefilename, []byte(string(json)), 0600)
 	if err != nil {
 		return nil, fmt.Errorf("error saving repo details: %w", err)
 	}
@@ -346,9 +423,29 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 	return allrepodetails, nil
 }
 
-func getPermissions(client *http.Client, baseurl string, token string, tmpfolder string) ([]ArtifactoryPermission, error) {
-	var cursor string
+func getPermissions(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryPermission, error) {
 	var allpermissions []ArtifactoryPermission
+	cachefilename := filepath.Join(cachefolder, "allpermissions.json")
+
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached permissions from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading permissions: %w", err)
+			}
+
+			err = json.Unmarshal(data, &allpermissions)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return allpermissions, nil
+		}
+	}
+
+	var cursor string
 
 	for {
 		var permissions []ArtifactoryPermission
@@ -367,8 +464,7 @@ func getPermissions(client *http.Client, baseurl string, token string, tmpfolder
 				return nil, fmt.Errorf("error generating json: %w", err)
 			}
 
-			outfile := fmt.Sprintf("%s/allpermissions.json", tmpfolder)
-			err = os.WriteFile(outfile, []byte(json), 0600)
+			err = os.WriteFile(cachefilename, []byte(json), 0600)
 			if err != nil {
 				return nil, fmt.Errorf("error saving permissions: %w", err)
 			}
@@ -419,8 +515,27 @@ func getPermissionsPage(client *http.Client, baseurl string, token string, curso
 	return permissions.Permissions, permissions.Cursor, nil
 }
 
-func getPermissionDetails(client *http.Client, baseurl string, token string, permissions []ArtifactoryPermission, tmpfolder string) ([]ArtifactoryPermissionDetails, error) {
+func getPermissionDetails(client *http.Client, baseurl string, token string, permissions []ArtifactoryPermission, cachefolder string, usecache bool) ([]ArtifactoryPermissionDetails, error) {
 	var allpermissiondetails []ArtifactoryPermissionDetails
+	cachefilename := filepath.Join(cachefolder, "allpermissiondetails.json")
+
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached permission details from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading permission details: %w", err)
+			}
+
+			err = json.Unmarshal(data, &allpermissiondetails)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return allpermissiondetails, nil
+		}
+	}
 
 	fmt.Println("Getting Permission details...")
 
@@ -452,7 +567,7 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 			fmt.Printf("Response body: '%s'\n", body)
 		}
 
-		outfile := fmt.Sprintf("%s/allpermissiondetails1.json", tmpfolder)
+		outfile := fmt.Sprintf("%s/allpermissiondetails1.json", cachefolder)
 		err = os.WriteFile(outfile, []byte(body), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("error saving response body: %w", err)
@@ -476,8 +591,7 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 		return nil, fmt.Errorf("error generating json: %w", err)
 	}
 
-	outfile := fmt.Sprintf("%s/allpermissiondetails.json", tmpfolder)
-	err = os.WriteFile(outfile, []byte(string(json)), 0600)
+	err = os.WriteFile(cachefilename, []byte(string(json)), 0600)
 	if err != nil {
 		return nil, fmt.Errorf("error saving permission details: %w", err)
 	}
@@ -485,24 +599,26 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 	return allpermissiondetails, nil
 }
 
-func getLDAPSettings(client *http.Client, baseurl string, token string, tmpfolder string) ([]ArtifactoryLDAPSettings, error) {
+func getLDAPSettings(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryLDAPSettings, error) {
 	var settings []ArtifactoryLDAPSettings
+	cachefilename := filepath.Join(cachefolder, "ldap_settings.json")
 
-	cachefilename := "ldap_settings.json"
-	if _, err := os.Stat(cachefilename); err == nil {
-		fmt.Printf("Using cached ldap settings from file: '%s'\n", cachefilename)
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached ldap settings from file: '%s'\n", cachefilename)
 
-		data, err := os.ReadFile(cachefilename)
-		if err != nil {
-			return nil, fmt.Errorf("error saving groups: %w", err)
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading ldap settings: %w", err)
+			}
+
+			err = json.Unmarshal(data, &settings)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return settings, nil
 		}
-
-		err = json.Unmarshal(data, &settings)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing response body: %w", err)
-		}
-
-		return settings, nil
 	}
 
 	url := fmt.Sprintf("%s/access/api/v1/ldap/settings", baseurl)
@@ -541,33 +657,34 @@ func getLDAPSettings(client *http.Client, baseurl string, token string, tmpfolde
 		return nil, fmt.Errorf("error generating json: %w", err)
 	}
 
-	outfile := fmt.Sprintf("%s/allldapsettings.json", tmpfolder)
-	err = os.WriteFile(outfile, []byte(json), 0600)
+	err = os.WriteFile(cachefilename, []byte(json), 0600)
 	if err != nil {
-		return nil, fmt.Errorf("error saving groups: %w", err)
+		return nil, fmt.Errorf("error saving ldap settings: %w", err)
 	}
 
 	return settings, nil
 }
 
-func getLDAPGroupSettings(client *http.Client, baseurl string, token string, tmpfolder string) ([]ArtifactoryLDAPGroupSettings, error) {
+func getLDAPGroupSettings(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryLDAPGroupSettings, error) {
 	var groups []ArtifactoryLDAPGroupSettings
+	cachefilename := filepath.Join(cachefolder, "ldap_groups.json")
 
-	cachefilename := "ldap_groups.json"
-	if _, err := os.Stat(cachefilename); err == nil {
-		fmt.Printf("Using cached ldap groups from file: '%s'\n", cachefilename)
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached ldap groups from file: '%s'\n", cachefilename)
 
-		data, err := os.ReadFile(cachefilename)
-		if err != nil {
-			return nil, fmt.Errorf("error saving groups: %w", err)
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading ldap groups: %w", err)
+			}
+
+			err = json.Unmarshal(data, &groups)
+			if err != nil {
+				return nil, fmt.Errorf("error parsing json file: %w", err)
+			}
+
+			return groups, nil
 		}
-
-		err = json.Unmarshal(data, &groups)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing response body: %w", err)
-		}
-
-		return groups, nil
 	}
 
 	url := fmt.Sprintf("%s/access/api/v1/ldap/groups", baseurl)
@@ -606,10 +723,9 @@ func getLDAPGroupSettings(client *http.Client, baseurl string, token string, tmp
 		return nil, fmt.Errorf("error generating json: %w", err)
 	}
 
-	outfile := fmt.Sprintf("%s/allldapgroupsettings.json", tmpfolder)
-	err = os.WriteFile(outfile, []byte(json), 0600)
+	err = os.WriteFile(cachefilename, []byte(json), 0600)
 	if err != nil {
-		return nil, fmt.Errorf("error saving groups: %w", err)
+		return nil, fmt.Errorf("error saving ldap groups: %w", err)
 	}
 
 	return groups, nil

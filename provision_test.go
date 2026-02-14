@@ -315,7 +315,7 @@ func TestProvisionLdap(t *testing.T) {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}, nil
 		}
 
-		fmt.Printf("FAIL\n")
+		fmt.Printf("FAIL1\n")
 
 		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})
@@ -385,7 +385,11 @@ func TestProvisionLdap(t *testing.T) {
 			return []*ldap.Entry{entry}, nil
 		}
 
-		fmt.Printf("FAIL\n")
+		if filter == "(&(objectClass=group)(cn=test-user))" && len(attrs) == 1 && attrs[0] == "description" {
+			return []*ldap.Entry{}, nil
+		}
+
+		fmt.Printf("FAIL2\n")
 
 		return []*ldap.Entry{}, nil
 	}
@@ -486,7 +490,7 @@ func TestProvisionLdapFail(t *testing.T) {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}, nil
 		}
 
-		fmt.Printf("FAIL\n")
+		fmt.Printf("FAIL3\n")
 
 		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})
