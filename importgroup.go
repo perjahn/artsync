@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -19,8 +20,8 @@ func ImportGroup(
 	groupname string,
 	ldapSettings []ArtifactoryLDAPSettings,
 	ldapGroupSettings []ArtifactoryLDAPGroupSettings,
-	artifactoryUsername string,
-	artifactoryPassword string,
+	accessToken string,
+	refreshToken string,
 	dryRun bool) (bool, error) {
 
 	if len(ldapSettings) == 0 {
@@ -31,7 +32,7 @@ func ImportGroup(
 	}
 
 	for _, ldapGroupSettingsSingle := range ldapGroupSettings {
-		fmt.Printf("Importing group: '%s', ldap settings: %d, ldap group settings: %d, group settings name: '%s'\n",
+		log.Printf("Importing group: '%s', ldap settings: %d, ldap group settings: %d, group settings name: '%s'\n",
 			groupname, len(ldapSettings), len(ldapGroupSettings), ldapGroupSettingsSingle.Name)
 
 		settingsIndex := -1
@@ -76,7 +77,7 @@ func ImportGroup(
 			return false, fmt.Errorf("query failed: %w", err)
 		}
 
-		fmt.Printf("Entries: %d\n", len(entries))
+		log.Printf("%s: %d\n", ldapGroupSettingsSingle.Name, len(entries))
 
 		if len(entries) < 1 {
 			continue
@@ -87,14 +88,14 @@ func ImportGroup(
 		entry := entries[0]
 
 		groupdn := entry.DN
-		fmt.Printf("groupdn: '%s'\n", groupdn)
+		log.Printf("groupdn: '%s'\n", groupdn)
 
 		values := entry.GetAttributeValues(ldapGroupSettingsSingle.DescriptionAttribute)
 		description := ""
 		if len(values) >= 1 {
 			description = values[0]
 		}
-		fmt.Printf("description: '%s'\n", description)
+		log.Printf("description: '%s'\n", description)
 
 		importGroup := ArtifactoryGroupImport{
 			ImportGroups: []ArtifactoryImportGroups{
@@ -108,7 +109,7 @@ func ImportGroup(
 			LdapGroupSettings: ldapGroupSettingsSingle,
 		}
 
-		err = importSingleGroup(client, baseurl, artifactoryUsername, artifactoryPassword, groupname, importGroup, dryRun)
+		err = importSingleGroup(client, baseurl, accessToken, refreshToken, groupname, importGroup, dryRun)
 		if err != nil {
 			return false, fmt.Errorf("import failed: %w", err)
 		}
@@ -123,18 +124,13 @@ func ImportGroup(
 func importSingleGroup(
 	client *http.Client,
 	baseurl string,
-	username string,
-	password string,
+	accessToken string,
+	refreshToken string,
 	groupname string,
 	groupimport ArtifactoryGroupImport,
 	dryRun bool) error {
 
 	fmt.Printf("Importing group: '%s'\n", groupname)
-
-	accessToken, refreshToken, err := getUITokens(client, baseurl, username, password)
-	if err != nil {
-		return fmt.Errorf("error: unable to obtain UI tokens: %v", err)
-	}
 
 	payload, err := json.Marshal(groupimport)
 	if err != nil {
@@ -167,7 +163,7 @@ func importSingleGroup(
 			return fmt.Errorf("unexpected response from '%s': %s - %s", url, resp.Status, string(body))
 		}
 
-		fmt.Printf("Created group '%s' via '%s' (status '%s', code %d)\n", groupname, url, resp.Status, resp.StatusCode)
+		log.Printf("Imported group '%s' via '%s' (status '%s', code %d)\n", groupname, url, resp.Status, resp.StatusCode)
 	}
 
 	return nil
@@ -199,7 +195,7 @@ func getUITokens(client *http.Client, baseurl string, username string, password 
 		return "", "", fmt.Errorf("error sending request to '%s': %w", url, err)
 	}
 
-	fmt.Printf("Status: '%s' %d\n", resp.Status, resp.StatusCode)
+	fmt.Printf("Got gui token: '%s' %d\n", resp.Status, resp.StatusCode)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)

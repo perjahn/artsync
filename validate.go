@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 )
 
 func Validate(reposToProvision []Repo, existingRepos []ArtifactoryRepoDetailsResponse, existingPermissions []ArtifactoryPermissionDetails) (repos []Repo, err error) {
 	reposToProvision = validateSharedPermissions(reposToProvision, existingPermissions)
+
+	reposToProvision = validateRepoNames(reposToProvision)
 
 	return reposToProvision, nil
 }
@@ -74,4 +77,34 @@ func validateSharedPermissions(reposToProvision []Repo, existingPermissions []Ar
 	}
 
 	return reposToProvision
+}
+
+func validateRepoNames(reposToProvision []Repo) []Repo {
+	for i := 0; i < len(reposToProvision); i++ {
+		repo := reposToProvision[i]
+		if repo.Name == "" {
+			fmt.Printf("'%s': Warning: Ignoring repo: missing name for repo.\n", repo.Name)
+			ignoredInvalidRepoCount++
+			reposToProvision = slices.Delete(reposToProvision, i, i+1)
+			i--
+		}
+
+		if !isValidRepoName(repo.Name) {
+			fmt.Printf("'%s': Warning: Ignoring repo: invalid name for repo.\n", repo.Name)
+			ignoredInvalidRepoCount++
+			reposToProvision = slices.Delete(reposToProvision, i, i+1)
+			i--
+		}
+	}
+
+	return reposToProvision
+}
+
+func isValidRepoName(s string) bool {
+	if len(s) > 0 && (s[0] == ' ' || s[len(s)-1] == ' ') {
+		return false
+	}
+	pattern := "^[a-zA-Z0-9 -_]+$"
+	regex := regexp.MustCompile(pattern)
+	return regex.MatchString(s)
 }

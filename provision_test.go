@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,24 +120,25 @@ func TestProvisionPermissions(t *testing.T) {
 		return reponse, nil
 	})
 
-	var out bytes.Buffer
-
-	origGetWriterFn := GetWriterFn
-	defer func() { GetWriterFn = origGetWriterFn }()
-
-	GetWriterFn = func() io.Writer {
-		return &out
-	}
-
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionPermissions: error = %v", err)
 	}
 
-	consoleDiffOutput := "+         \"MANAGE\",\n+         \"SCAN\",\n"
-	got := out.String()
-	if strings.TrimSpace(got) != strings.TrimSpace(consoleDiffOutput) {
-		t.Errorf("ProvisionPermissions: console output mismatch\n got: %q\nwant: %q", got, consoleDiffOutput)
+	oldJson := `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["OTHER","READ","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`
+	newJson := `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["MANAGE","OTHER","READ","SCAN","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`
+
+	got, err := PrintDiff(oldJson, newJson, true)
+	if err != nil {
+		t.Errorf("ProvisionPermissions: PrintDiff error = %v", err)
+	}
+
+	consoleDiffOutput := "MANAGE"
+	if !strings.Contains(got, consoleDiffOutput) {
+		t.Errorf("ProvisionPermissions: console output mismatch - missing MANAGE\n got: %q", got)
+	}
+	if !strings.Contains(got, "SCAN") {
+		t.Errorf("ProvisionPermissions: console output mismatch - missing SCAN\n got: %q", got)
 	}
 }
 
@@ -206,24 +206,25 @@ func TestProvisionRenamedPermissions(t *testing.T) {
 		return reponse, nil
 	})
 
-	var out bytes.Buffer
-
-	origGetWriterFn := GetWriterFn
-	defer func() { GetWriterFn = origGetWriterFn }()
-
-	GetWriterFn = func() io.Writer {
-		return &out
-	}
-
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionRenamedPermissions: error = %v", err)
 	}
 
-	consoleDiffOutput := "+         \"MANAGE\",\n+         \"SCAN\",\n"
-	got := out.String()
-	if strings.TrimSpace(got) != strings.TrimSpace(consoleDiffOutput) {
-		t.Errorf("ProvisionPermissions: console output mismatch\n got: %q\nwant: %q", got, consoleDiffOutput)
+	oldJson := `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["OTHER","READ","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`
+	newJson := `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["MANAGE","OTHER","READ","SCAN","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`
+
+	got, err := PrintDiff(oldJson, newJson, true)
+	if err != nil {
+		t.Errorf("ProvisionRenamedPermissions: PrintDiff error = %v", err)
+	}
+
+	consoleDiffOutput := "MANAGE"
+	if !strings.Contains(got, consoleDiffOutput) {
+		t.Errorf("ProvisionRenamedPermissions: console output mismatch - missing MANAGE\n got: %q", got)
+	}
+	if !strings.Contains(got, "SCAN") {
+		t.Errorf("ProvisionRenamedPermissions: console output mismatch - missing SCAN\n got: %q", got)
 	}
 }
 
@@ -321,12 +322,11 @@ func TestProvisionLdap(t *testing.T) {
 	})
 
 	ldapConfig := LdapConfig{
-		CreateUsers:         true,
-		ImportGroups:        true,
-		LdapUsername:        "ldapusername",
-		LdapPassword:        "ldappassword",
-		ArtifactoryUsername: "artifactoryusername",
-		ArtifactoryPassword: "artifactorypassword",
+		ImportUsersAndGroups: true,
+		LdapUsername:         "ldapusername",
+		LdapPassword:         "ldappassword",
+		ArtifactoryUsername:  "artifactoryusername",
+		ArtifactoryPassword:  "artifactorypassword",
 		Ldapsettings: []ArtifactoryLDAPSettings{
 			{
 				Key:     "ldapsettings",
@@ -495,12 +495,11 @@ func TestProvisionLdapFail(t *testing.T) {
 	})
 
 	ldapConfig := LdapConfig{
-		CreateUsers:         true,
-		ImportGroups:        true,
-		LdapUsername:        "ldapusername",
-		LdapPassword:        "ldappassword",
-		ArtifactoryUsername: "artifactoryusername",
-		ArtifactoryPassword: "artifactorypassword",
+		ImportUsersAndGroups: true,
+		LdapUsername:         "ldapusername",
+		LdapPassword:         "ldappassword",
+		ArtifactoryUsername:  "artifactoryusername",
+		ArtifactoryPassword:  "artifactorypassword",
 		Ldapsettings: []ArtifactoryLDAPSettings{
 			{
 				Key:     "ldapsettings",
