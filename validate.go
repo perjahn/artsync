@@ -50,7 +50,7 @@ func validateSharedPermissions(reposToProvision []Repo, existingPermissions []Ar
 		}
 	}
 
-	for i := 0; i < len(reposToProvision)-1; i++ {
+	for i := 0; i < len(reposToProvision); i++ {
 		repo1 := reposToProvision[i]
 		var permissionName1 string
 		if repo1.PermissionName == "" {

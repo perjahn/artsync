@@ -325,7 +325,6 @@ func usage() {
 	fmt.Println("Environment variables for overriding values in ldap.config:")
 	fmt.Println("ARTSYNC_LDAP_USERNAME: Credentials for connecting to the LDAP server.")
 	fmt.Println("ARTSYNC_LDAP_PASSWORD: -")
-	fmt.Println("ARTSYNC_GROUPSETTINGSNAME: Selecting between multiple ldap group settings in Artifactory.")
 	fmt.Println("ARTSYNC_ARTIFACTORY_USERNAME: Credentials for connecting to the Artifactory server.")
 	fmt.Println("ARTSYNC_ARTIFACTORY_PASSWORD: -")
 }

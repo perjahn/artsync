@@ -94,7 +94,7 @@ func TestCreateUser(t *testing.T) {
 			return []*ldap.Entry{entry}, nil
 		}
 
-		_, err := CreateUser(client, "", "", "", "", tc.userName, tc.ldapSettings, tc.ldapGroupSettings, tc.dryRun)
+		_, err := CreateUser(client, "", "", "", "", tc.userName, tc.ldapSettings, tc.dryRun)
 		if (tc.shouldErr && err == nil) || (!tc.shouldErr && err != nil ||
 			(tc.artifactoryCallCount != artifactoryCallCount) || (tc.ldapCallCount != ldapCallCount)) {
 			t.Errorf("CreateUser (%d/%d): shouldErr: %t/%t, ldap backend calls: %d/%d, artifactory backend calls: %d/%d, error = %v",

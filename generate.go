@@ -25,6 +25,10 @@ func Generate(
 
 	var reposToSave []Repo
 
+	sort.Slice(repos, func(i, j int) bool {
+		return repos[i].Key < repos[j].Key
+	})
+
 	for _, repo := range repos {
 		if onlyGenerateMatchingRepos && !includeOnlyMatchingRepos(repo.Key, permissiondetails) {
 			continue

@@ -30,36 +30,39 @@ func ImportGroup(
 		return false, fmt.Errorf("missing LDAP group settings")
 	}
 
-	for _, ldapgroupsettingsSingle := range ldapGroupSettings {
+	for _, ldapGroupSettingsSingle := range ldapGroupSettings {
+		fmt.Printf("Importing group: '%s', ldap settings: %d, ldap group settings: %d, group settings name: '%s'\n",
+			groupname, len(ldapSettings), len(ldapGroupSettings), ldapGroupSettingsSingle.Name)
+
 		settingsIndex := -1
 		for i := range ldapSettings {
-			if ldapSettings[i].Key == ldapgroupsettingsSingle.EnabledLdap {
+			if ldapSettings[i].Key == ldapGroupSettingsSingle.EnabledLdap {
 				settingsIndex = i
 				break
 			}
 		}
 		if settingsIndex == -1 {
-			return false, fmt.Errorf("LDAP settings named '%s' not found", ldapgroupsettingsSingle.EnabledLdap)
+			return false, fmt.Errorf("LDAP settings named '%s' not found", ldapGroupSettingsSingle.EnabledLdap)
 		}
 		ldapSettingsSingle := ldapSettings[settingsIndex]
 
 		var basedn string
 		if strings.Count(ldapSettingsSingle.LdapUrl, "/") >= 3 {
 			parts := strings.SplitN(ldapSettingsSingle.LdapUrl, "/", 4)
-			if ldapgroupsettingsSingle.GroupBaseDn != "" {
-				basedn = fmt.Sprintf("%s,%s", ldapgroupsettingsSingle.GroupBaseDn, parts[3])
+			if ldapGroupSettingsSingle.GroupBaseDn != "" {
+				basedn = fmt.Sprintf("%s,%s", ldapGroupSettingsSingle.GroupBaseDn, parts[3])
 			} else {
 				basedn = parts[3]
 			}
 		} else {
-			basedn = ldapgroupsettingsSingle.GroupBaseDn
+			basedn = ldapGroupSettingsSingle.GroupBaseDn
 		}
 
 		var filter string
-		if ldapgroupsettingsSingle.Filter != "" {
-			filter = fmt.Sprintf("(&%s(%s=%s))", ldapgroupsettingsSingle.Filter, ldapgroupsettingsSingle.GroupNameAttribute, groupname)
+		if ldapGroupSettingsSingle.Filter != "" {
+			filter = fmt.Sprintf("(&%s(%s=%s))", ldapGroupSettingsSingle.Filter, ldapGroupSettingsSingle.GroupNameAttribute, groupname)
 		} else {
-			filter = fmt.Sprintf("(%s=%s)", ldapgroupsettingsSingle.GroupNameAttribute, groupname)
+			filter = fmt.Sprintf("(%s=%s)", ldapGroupSettingsSingle.GroupNameAttribute, groupname)
 		}
 
 		entries, err := queryldapImportGroupFn(
@@ -68,7 +71,7 @@ func ImportGroup(
 			filter,
 			ldapUsername,
 			ldapPassword,
-			[]string{ldapgroupsettingsSingle.DescriptionAttribute})
+			[]string{ldapGroupSettingsSingle.DescriptionAttribute})
 		if err != nil {
 			return false, fmt.Errorf("query failed: %w", err)
 		}
@@ -76,8 +79,7 @@ func ImportGroup(
 		fmt.Printf("Entries: %d\n", len(entries))
 
 		if len(entries) < 1 {
-			fmt.Printf("Didn't find group: '%s'\n", groupname)
-			return false, nil
+			continue
 		}
 		if len(entries) > 1 {
 			return false, fmt.Errorf("error: multiple DNs found for group: '%s'", groupname)
@@ -87,7 +89,7 @@ func ImportGroup(
 		groupdn := entry.DN
 		fmt.Printf("groupdn: '%s'\n", groupdn)
 
-		values := entry.GetAttributeValues(ldapgroupsettingsSingle.DescriptionAttribute)
+		values := entry.GetAttributeValues(ldapGroupSettingsSingle.DescriptionAttribute)
 		description := ""
 		if len(values) >= 1 {
 			description = values[0]
@@ -103,16 +105,19 @@ func ImportGroup(
 					RequiredUpdate: "DOES_NOT_EXIST",
 				},
 			},
-			LdapGroupSettings: ldapgroupsettingsSingle,
+			LdapGroupSettings: ldapGroupSettingsSingle,
 		}
 
 		err = importSingleGroup(client, baseurl, artifactoryUsername, artifactoryPassword, groupname, importGroup, dryRun)
 		if err != nil {
 			return false, fmt.Errorf("import failed: %w", err)
 		}
+
+		return true, nil
 	}
 
-	return true, nil
+	fmt.Printf("Didn't find group: '%s'\n", groupname)
+	return false, nil
 }
 
 func importSingleGroup(
