@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -194,7 +195,7 @@ func getFlagEnv(value bool, envname string) bool {
 }
 
 func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
-	empty := LdapConfig{ImportUsersAndGroups: false}
+	empty := LdapConfig{}
 
 	if len(ldapsettings) == 0 || len(ldapgroupsettings) == 0 {
 		return empty, fmt.Errorf("Error: Couldn't retrieve ldap settings from Artifactory, cannot import ldap users/groups: ldapsettings count: %d, ldapgroupsettings count: %d",
@@ -205,6 +206,8 @@ func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings [
 	envLdapPassword := os.Getenv("ARTSYNC_LDAP_PASSWORD")
 	envArtifactoryUsername := os.Getenv("ARTSYNC_ARTIFACTORY_USERNAME")
 	envArtifactoryPassword := os.Getenv("ARTSYNC_ARTIFACTORY_PASSWORD")
+	envExcludeServersStr := os.Getenv("ARTSYNC_EXCLUDE_SETTINGS")
+	envExcludeSettings := strings.Split(strings.TrimSpace(envExcludeServersStr), ",")
 
 	if envLdapUsername != "" && envLdapPassword != "" && envArtifactoryUsername != "" && envArtifactoryPassword != "" {
 		return LdapConfig{
@@ -213,11 +216,11 @@ func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings [
 			LdapPassword:         envLdapPassword,
 			ArtifactoryUsername:  envArtifactoryUsername,
 			ArtifactoryPassword:  envArtifactoryPassword,
-			Ldapsettings:         ldapsettings,
-			Ldapgroupsettings:    ldapgroupsettings,
+			Ldapsettings:         filterLdapSettings(ldapsettings, envExcludeSettings),
+			Ldapgroupsettings:    filterLdapGroupSettings(ldapgroupsettings, envExcludeSettings),
+			ExcludeSettings:      envExcludeSettings,
 		}, nil
 	}
-
 	var ldapConfig LdapConfig
 
 	fmt.Printf("Using ldap config file: '%s'\n", configFile)
@@ -243,12 +246,45 @@ func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings [
 	if envArtifactoryPassword != "" {
 		ldapConfig.ArtifactoryPassword = envArtifactoryPassword
 	}
+	if len(envExcludeSettings) > 0 {
+		ldapConfig.ExcludeSettings = envExcludeSettings
+	}
 
 	ldapConfig.ImportUsersAndGroups = importUsersAndGroups
-	ldapConfig.Ldapsettings = ldapsettings
-	ldapConfig.Ldapgroupsettings = ldapgroupsettings
+	ldapConfig.Ldapsettings = filterLdapSettings(ldapsettings, ldapConfig.ExcludeSettings)
+	ldapConfig.Ldapgroupsettings = filterLdapGroupSettings(ldapgroupsettings, ldapConfig.ExcludeSettings)
 
 	return ldapConfig, nil
+}
+
+func filterLdapSettings(ldapsettings []ArtifactoryLDAPSettings, excludeSettings []string) []ArtifactoryLDAPSettings {
+	var filtered []ArtifactoryLDAPSettings
+
+	for _, setting := range ldapsettings {
+		exclude := slices.Contains(excludeSettings, setting.Key)
+		if !exclude {
+			filtered = append(filtered, setting)
+		} else {
+			fmt.Printf("Excluding ldap setting: '%s'\n", setting.Key)
+		}
+	}
+
+	return filtered
+}
+
+func filterLdapGroupSettings(ldapgroupsettings []ArtifactoryLDAPGroupSettings, excludeSettings []string) []ArtifactoryLDAPGroupSettings {
+	var filtered []ArtifactoryLDAPGroupSettings
+
+	for _, setting := range ldapgroupsettings {
+		exclude := slices.Contains(excludeSettings, setting.EnabledLdap)
+		if !exclude {
+			filtered = append(filtered, setting)
+		} else {
+			fmt.Printf("Excluding ldap group setting: '%s'\n", setting.Name)
+		}
+	}
+
+	return filtered
 }
 
 func getBaseURL(arg string) string {
