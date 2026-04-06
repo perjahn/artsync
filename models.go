@@ -13,6 +13,7 @@ type ArtifactoryRepoDetailsResponse struct {
 	Rclass        string `json:"rclass"`
 	PackageType   string `json:"packageType"`
 	RepoLayoutRef string `json:"repoLayoutRef"`
+	Url           string `json:"url,omitempty"`
 }
 
 type ArtifactoryRepoRequest struct {
@@ -21,6 +22,7 @@ type ArtifactoryRepoRequest struct {
 	Rclass        string `json:"rclass"`
 	PackageType   string `json:"packageType,omitempty"`
 	RepoLayoutRef string `json:"repoLayoutRef,omitempty"`
+	Url           string `json:"url,omitempty"`
 }
 
 type ArtifactoryPermissions struct {
@@ -88,6 +90,7 @@ type Repo struct {
 	Rclass         string   `json:"rclass,omitempty"`
 	PackageType    string   `json:"packageType,omitempty"`
 	Layout         string   `json:"layout,omitempty"`
+	Url            string   `json:"url,omitempty"`
 	PermissionName string   `json:"permissionName,omitempty"`
 	Read           []string `json:"read,omitempty"`
 	Annotate       []string `json:"annotate,omitempty"`

@@ -259,15 +259,18 @@ func provisionRepo(
 		if existingRepo.Description != repo.Description {
 			diff = true
 		}
-		if !strings.EqualFold(existingRepo.Rclass, repo.Rclass) {
+		if existingRepo.Rclass != repo.Rclass {
 			fmt.Printf("'%s': Ignoring repo, cannot update rclass/type: diff: '%s' -> '%s'\n", repo.Name, existingRepo.Rclass, repo.Rclass)
 			ignore = true
 		}
-		if !strings.EqualFold(existingRepo.PackageType, repo.PackageType) {
+		if existingRepo.PackageType != repo.PackageType {
 			fmt.Printf("'%s': Ignoring repo, cannot update package type: diff: '%s' -> '%s'\n", repo.Name, existingRepo.PackageType, repo.PackageType)
 			ignore = true
 		}
-		if !strings.EqualFold(existingRepo.RepoLayoutRef, repo.Layout) {
+		if existingRepo.RepoLayoutRef != repo.Layout {
+			diff = true
+		}
+		if repo.Rclass == "remote" && existingRepo.Url != repo.Url {
 			diff = true
 		}
 		if ignore {
@@ -307,8 +310,11 @@ func updateExistingRepo(
 	if existingRepo.Description != repo.Description {
 		fmt.Printf("'%s': Description diff: '%s' -> '%s'\n", repo.Name, existingRepo.Description, repo.Description)
 	}
-	if !strings.EqualFold(existingRepo.RepoLayoutRef, repo.Layout) {
+	if existingRepo.RepoLayoutRef != repo.Layout {
 		fmt.Printf("'%s': Layout diff: '%s' -> '%s'\n", repo.Name, existingRepo.RepoLayoutRef, repo.Layout)
+	}
+	if repo.Rclass == "remote" && existingRepo.Url != repo.Url {
+		fmt.Printf("'%s': Url diff: '%s' -> '%s'\n", repo.Name, existingRepo.Url, repo.Url)
 	}
 
 	url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
@@ -319,6 +325,9 @@ func updateExistingRepo(
 		Rclass:        repo.Rclass,
 		PackageType:   repo.PackageType,
 		RepoLayoutRef: repo.Layout,
+	}
+	if repo.Rclass == "remote" {
+		artifactoryrepo.Url = repo.Url
 	}
 
 	json, err := json.Marshal(artifactoryrepo)
@@ -373,6 +382,9 @@ func createNewRepo(
 		PackageType:   repo.PackageType,
 		RepoLayoutRef: repo.Layout,
 	}
+	if repo.Rclass == "remote" {
+		artifactoryrepo.Url = repo.Url
+	}
 
 	json, err := json.Marshal(artifactoryrepo)
 	if err != nil {
@@ -397,6 +409,9 @@ func createNewRepo(
 	}
 	if repo.Layout != "" {
 		fields = append(fields, fmt.Sprintf("Layout: '%s'", repo.Layout))
+	}
+	if repo.Rclass == "remote" && repo.Url != "" {
+		fields = append(fields, fmt.Sprintf("Url: '%s'", repo.Url))
 	}
 	fmt.Printf("'%s': %s\n", repo.Name, strings.Join(fields, ", "))
 
@@ -435,11 +450,19 @@ func provisionPermissionTarget(
 	allowpatterns bool,
 	dryRun bool) error {
 
+	if repo.Rclass == "virtual" {
+		return nil
+	}
+
 	var permissionName string
 	if repo.PermissionName != "" {
 		permissionName = repo.PermissionName
 	} else {
 		permissionName = repo.Name
+	}
+
+	if repo.Rclass == "remote" {
+		permissionName = permissionName + "-cache"
 	}
 
 	var existingPermission *ArtifactoryPermissionDetails

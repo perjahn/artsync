@@ -320,6 +320,7 @@ func getToken(arg string) string {
 		}
 		token = string(data)
 	}
+	token = strings.TrimSpace(token)
 	if token == "" {
 		fmt.Println("Error: Token is empty.")
 		os.Exit(1)
