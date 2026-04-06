@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -120,5 +121,89 @@ func TestValidationSharedExistingPermissions(t *testing.T) {
 	wantIgnoreCount := 1
 	if ignoredInvalidRepoCount != wantIgnoreCount {
 		t.Errorf("ValidationSharedExistingPermissions: unexpected ignore count: want: '%d', was: '%d'", wantIgnoreCount, ignoredInvalidRepoCount)
+	}
+}
+
+func TestValidateCasePermissionsWithUppercase(t *testing.T) {
+	reposToProvision := []Repo{
+		{
+			Name: "repo1",
+			Read: []string{"user1", "User2"},
+		},
+		{
+			Name:   "repo2",
+			Read:   []string{"user3"},
+			Write:  []string{"admin"},
+			Delete: []string{"DeleteUser"},
+		},
+		{
+			Name: "repo3",
+			Read: []string{"user4"},
+		},
+	}
+
+	existingRepos := []ArtifactoryRepoDetailsResponse{}
+	existingPermissions := []ArtifactoryPermissionDetails{}
+
+	ignoredInvalidRepoCount = 0
+	reposToProvision, err := Validate(reposToProvision, existingRepos, existingPermissions)
+	if err != nil {
+		t.Errorf("ValidateCasePermissions: error = %v", err)
+	}
+
+	wantCount := 3
+	if len(reposToProvision) != wantCount {
+		t.Errorf("ValidateCasePermissions: expected %d repos to provision, got %d", wantCount, len(reposToProvision))
+	} else {
+		// Check repo1 permissions converted to lowercase
+		if !slices.Equal(reposToProvision[0].Read, []string{"user1", "user2"}) {
+			t.Errorf("ValidateCasePermissions: repo1 Read not converted: got %v", reposToProvision[0].Read)
+		}
+		// Check repo2 permissions converted to lowercase
+		if !slices.Equal(reposToProvision[1].Delete, []string{"deleteuser"}) {
+			t.Errorf("ValidateCasePermissions: repo2 Delete not converted: got %v", reposToProvision[1].Delete)
+		}
+		// Check repo3 unchanged
+		if !slices.Equal(reposToProvision[2].Read, []string{"user4"}) {
+			t.Errorf("ValidateCasePermissions: repo3 Read should be unchanged: got %v", reposToProvision[2].Read)
+		}
+	}
+	wantIgnoreCount := 0
+	if ignoredInvalidRepoCount != wantIgnoreCount {
+		t.Errorf("ValidateCasePermissions: unexpected ignore count: want: '%d', got: '%d'", wantIgnoreCount, ignoredInvalidRepoCount)
+	}
+}
+
+func TestValidateCasePermissionsAllLowercase(t *testing.T) {
+	reposToProvision := []Repo{
+		{
+			Name:   "repo1",
+			Read:   []string{"user1", "user2"},
+			Write:  []string{"admin"},
+			Delete: []string{"deleteuser"},
+		},
+		{
+			Name:   "repo2",
+			Read:   []string{"user3"},
+			Manage: []string{"manager"},
+		},
+	}
+
+	existingRepos := []ArtifactoryRepoDetailsResponse{}
+	existingPermissions := []ArtifactoryPermissionDetails{}
+
+	ignoredInvalidRepoCount = 0
+	reposToProvision, err := Validate(reposToProvision, existingRepos, existingPermissions)
+	if err != nil {
+		t.Errorf("ValidateCasePermissionsAllLowercase: error = %v", err)
+	}
+
+	wantCount := 2
+	if len(reposToProvision) != wantCount {
+		t.Errorf("ValidateCasePermissionsAllLowercase: expected %d repos to provision, got %d", wantCount, len(reposToProvision))
+	}
+	wantIgnoreCount := 0
+	if ignoredInvalidRepoCount != wantIgnoreCount {
+		t.Errorf("ValidateCasePermissionsAllLowercase: unexpected ignore count: want: '%d', got: '%d'", wantIgnoreCount, ignoredInvalidRepoCount)
 	}
 }

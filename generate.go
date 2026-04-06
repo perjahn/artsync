@@ -53,20 +53,21 @@ func Generate(
 			Rclass:         repo.Rclass,
 			PackageType:    repo.PackageType,
 			Layout:         repo.RepoLayoutRef,
+			Url:            repo.Url,
 			PermissionName: permissionName,
 		}
 
 		if allowRenamedPermissions {
 			if permissionName == "" {
 				for _, permission := range permissiondetails {
-					if permission.Name == repo.Key {
+					if permission.Name == repo.Key || (repo.Rclass == "remote" && permission.Name == repo.Key+"-cache") {
 						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
 						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
 					}
 				}
 			} else {
 				for _, permission := range permissiondetails {
-					if permission.Name == permissionName {
+					if permission.Name == permissionName || (repo.Rclass == "remote" && permission.Name == repo.Key+"-cache") {
 						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
 						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
 					}
@@ -75,7 +76,7 @@ func Generate(
 		} else if useAllPermissionTargetsAsSource {
 			for _, permission := range permissiondetails {
 				for reponame := range permission.Resources.Artifact.Targets {
-					if reponame == repo.Key {
+					if reponame == repo.Key || (repo.Rclass == "remote" && reponame == repo.Key+"-cache") {
 						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
 						addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
 					}
@@ -83,7 +84,7 @@ func Generate(
 			}
 		} else {
 			for _, permission := range permissiondetails {
-				if permission.Name == repo.Key {
+				if permission.Name == repo.Key || (repo.Rclass == "remote" && permission.Name == repo.Key+"-cache") {
 					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Users)
 					addPermissionsToRepo(&repoToSave, permission.Resources.Artifact.Actions.Groups)
 				}

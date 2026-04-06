@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 func Validate(reposToProvision []Repo, existingRepos []ArtifactoryRepoDetailsResponse, existingPermissions []ArtifactoryPermissionDetails) (repos []Repo, err error) {
 	reposToProvision = validateSharedPermissions(reposToProvision, existingPermissions)
 
 	reposToProvision = validateRepoNames(reposToProvision)
+
+	reposToProvision = validateCasePermissions(reposToProvision)
 
 	return reposToProvision, nil
 }
@@ -62,6 +65,10 @@ func validateSharedPermissions(reposToProvision []Repo, existingPermissions []Ar
 			permissionName1 = repo1.PermissionName
 		}
 
+		if repo1.Rclass == "remote" {
+			permissionName1 = permissionName1 + "-cache"
+		}
+
 		for _, permission := range existingPermissions {
 			if permissionName1 == permission.Name {
 				for targetName := range permission.Resources.Artifact.Targets {
@@ -83,14 +90,14 @@ func validateRepoNames(reposToProvision []Repo) []Repo {
 	for i := 0; i < len(reposToProvision); i++ {
 		repo := reposToProvision[i]
 		if repo.Name == "" {
-			fmt.Printf("'%s': Warning: Ignoring repo: missing name for repo.\n", repo.Name)
+			fmt.Printf("Warning: Ignoring repo '%s', due to missing name for repo.\n", repo.Name)
 			ignoredInvalidRepoCount++
 			reposToProvision = slices.Delete(reposToProvision, i, i+1)
 			i--
 		}
 
 		if !isValidRepoName(repo.Name) {
-			fmt.Printf("'%s': Warning: Ignoring repo: invalid name for repo.\n", repo.Name)
+			fmt.Printf("Warning: Ignoring repo '%s', due to invalid name for repo.\n", repo.Name)
 			ignoredInvalidRepoCount++
 			reposToProvision = slices.Delete(reposToProvision, i, i+1)
 			i--
@@ -107,4 +114,40 @@ func isValidRepoName(s string) bool {
 	pattern := "^[a-zA-Z0-9 -_]+$"
 	regex := regexp.MustCompile(pattern)
 	return regex.MatchString(s)
+}
+
+func validateCasePermissions(reposToProvision []Repo) []Repo {
+	for i := range reposToProvision {
+		repo := reposToProvision[i]
+		var offendingValues []string
+
+		permSlices := [][]string{repo.Read, repo.Annotate, repo.Write, repo.Delete, repo.Manage, repo.Scan}
+		for _, permSlice := range permSlices {
+			for _, value := range permSlice {
+				if strings.ToLower(value) != value {
+					offendingValues = append(offendingValues, value)
+				}
+			}
+		}
+
+		if len(offendingValues) > 0 {
+			fmt.Printf("Warning: Converting permissions for repo '%s' to lowercase: %v -> %v\n", repo.Name, offendingValues, toLowerSlice(offendingValues))
+			repo.Read = toLowerSlice(repo.Read)
+			repo.Annotate = toLowerSlice(repo.Annotate)
+			repo.Write = toLowerSlice(repo.Write)
+			repo.Delete = toLowerSlice(repo.Delete)
+			repo.Manage = toLowerSlice(repo.Manage)
+			repo.Scan = toLowerSlice(repo.Scan)
+			reposToProvision[i] = repo
+		}
+	}
+	return reposToProvision
+}
+
+func toLowerSlice(slice []string) []string {
+	result := make([]string, len(slice))
+	for i, v := range slice {
+		result[i] = strings.ToLower(v)
+	}
+	return result
 }

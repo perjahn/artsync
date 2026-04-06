@@ -392,7 +392,7 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 			fmt.Printf("Response body: '%s'\n", body)
 		}
 
-		outfile := fmt.Sprintf("%s/allrepodetails1.json", cachefolder)
+		outfile := fmt.Sprintf("%s/allrepodetails_last_page.json", cachefolder)
 		err = os.WriteFile(outfile, []byte(body), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("error saving response body: %w", err)
@@ -567,7 +567,7 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 			fmt.Printf("Response body: '%s'\n", body)
 		}
 
-		outfile := fmt.Sprintf("%s/allpermissiondetails1.json", cachefolder)
+		outfile := fmt.Sprintf("%s/allpermissiondetails_last_page.json", cachefolder)
 		err = os.WriteFile(outfile, []byte(body), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("error saving response body: %w", err)
