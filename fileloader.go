@@ -21,7 +21,7 @@ func LoadRepoFiles(repofiles []string, provisionEmpty bool) []Repo {
 		repos, err := loadRepoFile(repofile, provisionEmpty)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring invalid repo file: %v\n", repofile, err)
-			ignoredInvalidRepoFilesCount++
+			stats.IgnoredInvalidRepoFilesCount++
 			continue
 		}
 
@@ -59,17 +59,40 @@ func loadRepoFile(repofile string, provisionEmpty bool) ([]Repo, error) {
 	return repos, nil
 }
 
+func extractExtraFields(rawData map[string]any) map[string]any {
+	knownFields := map[string]bool{
+		"name": true, "names": true, "description": true, "rclass": true,
+		"packageType": true, "layout": true, "url": true, "permissionName": true,
+		"read": true, "annotate": true, "write": true, "delete": true,
+		"manage": true, "scan": true,
+	}
+
+	extraFields := make(map[string]any)
+	for k, v := range rawData {
+		if !knownFields[k] {
+			extraFields[k] = v
+		}
+	}
+	if len(extraFields) > 0 {
+		return extraFields
+	}
+	return nil
+}
+
 func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Repo, error) {
 	var repos []Repo
 
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	errjson := decoder.Decode(&repos)
+	errjson := json.Unmarshal(data, &repos)
 	if errjson != nil {
 		var onerepo Repo
-		decoder1 := json.NewDecoder(strings.NewReader(string(data)))
-		errjson1 := decoder1.Decode(&onerepo)
+		errjson1 := json.Unmarshal(data, &onerepo)
 		if errjson1 != nil {
 			return nil, fmt.Errorf("error parsing file as json: %w", errors.Join(errjson, errjson1))
+		}
+
+		var rawRepo map[string]any
+		if err := json.Unmarshal(data, &rawRepo); err == nil {
+			onerepo.ExtraFields = extractExtraFields(rawRepo)
 		}
 
 		onerepo.SourceFile = repofile
@@ -95,7 +118,7 @@ func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Rep
 		}
 	}
 
-	decoder = json.NewDecoder(strings.NewReader(string(data)))
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	offsets := []int{}
 	for {
 		t, err := decoder.Token()
@@ -110,6 +133,14 @@ func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Rep
 		return nil, fmt.Errorf("error number of repos (%d) does not match number of json objects (%d)",
 			len(repos), len(offsets))
 	}
+
+	var rawRepos []map[string]any
+	if err := json.Unmarshal(data, &rawRepos); err == nil && len(rawRepos) == len(repos) {
+		for i := range repos {
+			repos[i].ExtraFields = extractExtraFields(rawRepos[i])
+		}
+	}
+
 	for i := range repos {
 		repos[i].SourceFile = repofile
 		repos[i].SourceOffset = offsets[i]
@@ -137,6 +168,11 @@ func tryParseYamlRepos(data []byte, repofile string, provisionEmpty bool) ([]Rep
 		erryaml1 := yaml.Unmarshal(data, &onerepo)
 		if erryaml1 != nil {
 			return nil, fmt.Errorf("error parsing file as yaml1: %w", errors.Join(erryaml, erryaml1))
+		}
+
+		var rawRepo map[string]any
+		if err := yaml.Unmarshal(data, &rawRepo); err == nil {
+			onerepo.ExtraFields = extractExtraFields(rawRepo)
 		}
 
 		onerepo.SourceFile = repofile
@@ -188,6 +224,14 @@ func tryParseYamlRepos(data []byte, repofile string, provisionEmpty bool) ([]Rep
 		return nil, fmt.Errorf("error number of repos (%d) does not match number of yaml objects (%d)",
 			len(repos), len(positions))
 	}
+
+	var rawRepos []map[string]any
+	if err := yaml.Unmarshal(data, &rawRepos); err == nil && len(rawRepos) == len(repos) {
+		for i := range repos {
+			repos[i].ExtraFields = extractExtraFields(rawRepos[i])
+		}
+	}
+
 	for i := range repos {
 		repos[i].SourceFile = repofile
 		repos[i].SourceOffset = positions[i].offset
@@ -283,7 +327,7 @@ func removeDups(repos []Repo) []Repo {
 	}
 	sort.Ints(repoIndicesToDelete)
 
-	ignoredDuplicated_RepoCount = len(repoIndicesToDelete)
+	stats.IgnoredDuplicatedRepoCount = len(repoIndicesToDelete)
 
 	for i := len(repoIndicesToDelete) - 1; i >= 0; i-- {
 		repos = slices.Delete(repos, repoIndicesToDelete[i], repoIndicesToDelete[i]+1)

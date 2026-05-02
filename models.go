@@ -84,23 +84,24 @@ type ArtifactoryUserRequest struct {
 }
 
 type Repo struct {
-	Name           string   `json:"name,omitempty"`
-	Names          []string `json:"names,omitempty"`
-	Description    string   `json:"description,omitempty"`
-	Rclass         string   `json:"rclass,omitempty"`
-	PackageType    string   `json:"packageType,omitempty"`
-	Layout         string   `json:"layout,omitempty"`
-	Url            string   `json:"url,omitempty"`
-	PermissionName string   `json:"permissionName,omitempty"`
-	Read           []string `json:"read,omitempty"`
-	Annotate       []string `json:"annotate,omitempty"`
-	Write          []string `json:"write,omitempty"`
-	Delete         []string `json:"delete,omitempty"`
-	Manage         []string `json:"manage,omitempty"`
-	Scan           []string `json:"scan,omitempty"`
-	SourceFile     string   `json:"-"`
-	SourceOffset   int      `json:"-"`
-	SourceLine     int      `json:"-"`
+	Name           string         `json:"name,omitempty"`
+	Names          []string       `json:"names,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	Rclass         string         `json:"rclass,omitempty"`
+	PackageType    string         `json:"packageType,omitempty"`
+	Layout         string         `json:"layout,omitempty"`
+	Url            string         `json:"url,omitempty"`
+	PermissionName string         `json:"permissionName,omitempty"`
+	Read           []string       `json:"read,omitempty"`
+	Annotate       []string       `json:"annotate,omitempty"`
+	Write          []string       `json:"write,omitempty"`
+	Delete         []string       `json:"delete,omitempty"`
+	Manage         []string       `json:"manage,omitempty"`
+	Scan           []string       `json:"scan,omitempty"`
+	SourceFile     string         `json:"-"`
+	SourceOffset   int            `json:"-"`
+	SourceLine     int            `json:"-"`
+	ExtraFields    map[string]any `json:"-"`
 }
 
 type ArtifactoryLDAPGroupSettings struct {
@@ -162,4 +163,10 @@ type LdapConfig struct {
 	Ldapsettings         []ArtifactoryLDAPSettings      `json:"-"`
 	Ldapgroupsettings    []ArtifactoryLDAPGroupSettings `json:"-"`
 	ExcludeSettings      []string                       `json:"excludesettings"`
+}
+
+type PropertiesConfig struct {
+	SetProperties bool   `json:"-"`
+	Prefix        string `json:"prefix"`
+	Url           string `json:"url"`
 }

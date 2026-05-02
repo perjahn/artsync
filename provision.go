@@ -10,21 +10,23 @@ import (
 	"strings"
 )
 
-var ignoredInvalidRepoFilesCount int
-var ignoredDuplicated_RepoCount int
-var ignoredInvalidRepoCount int
-var ignoredNoDiffRepoCount int
-var ignoredInvalidPermissionCount int
-var ignoredNoDiffPermissionCount int
-var ignoredDuplicatePermissionCount int
+type Statistics struct {
+	IgnoredInvalidRepoFilesCount    int
+	IgnoredDuplicatedRepoCount      int
+	IgnoredInvalidRepoCount         int
+	IgnoredNoDiffRepoCount          int
+	IgnoredInvalidPermissionCount   int
+	IgnoredNoDiffPermissionCount    int
+	IgnoredDuplicatePermissionCount int
+	CreatedUserCount                int
+	ImportedGroupCount              int
+	CreatedRepoCount                int
+	UpdatedRepoCount                int
+	CreatedPermissionCount          int
+	UpdatedPermissionCount          int
+}
 
-var createdUserCount int
-var importedGroupCount int
-
-var createdRepoCount int
-var updatedRepoCount int
-var createdPermissionCount int
-var updatedPermissionCount int
+var stats Statistics
 
 func Provision(
 	client *http.Client,
@@ -38,6 +40,7 @@ func Provision(
 	showDiff bool,
 	allowpatterns bool,
 	ldapConfig LdapConfig,
+	propertiesConfig PropertiesConfig,
 	dryRun bool) error {
 
 	if ldapConfig.ImportUsersAndGroups {
@@ -52,34 +55,35 @@ func Provision(
 	fmt.Printf("Repos to provision: %d\n", len(reposToProvision))
 
 	for _, repo := range reposToProvision {
-		err := provisionRepo(client, baseurl, token, repo, allrepos, dryRun)
+		err := provisionRepo(client, baseurl, token, repo, allrepos, propertiesConfig, dryRun)
 		if err != nil {
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
-			ignoredInvalidRepoCount++
+			stats.IgnoredInvalidRepoCount++
 		} else {
 			err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, showDiff, allowpatterns, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
-				ignoredInvalidPermissionCount++
+				stats.IgnoredInvalidPermissionCount++
 			}
 		}
 	}
 
-	fmt.Printf("Ignored invalid repo files: %d\n", ignoredInvalidRepoFilesCount)
-	fmt.Printf("Ignored duplicated repos: %d\n", ignoredDuplicated_RepoCount)
-	fmt.Printf("Ignored invalid repos: %d\n", ignoredInvalidRepoCount)
-	fmt.Printf("Ignored no diff repos: %d\n", ignoredNoDiffRepoCount)
-	fmt.Printf("Ignored invalid permission targets: %d\n", ignoredInvalidPermissionCount)
-	fmt.Printf("Ignored no diff permission targets: %d\n", ignoredNoDiffPermissionCount)
-	fmt.Printf("Ignored duplicate permissions: %d\n", ignoredDuplicatePermissionCount)
+	fmt.Printf("Results:\n")
+	fmt.Printf("  Ignored invalid repo files: %d\n", stats.IgnoredInvalidRepoFilesCount)
+	fmt.Printf("  Ignored duplicated repos: %d\n", stats.IgnoredDuplicatedRepoCount)
+	fmt.Printf("  Ignored invalid repos: %d\n", stats.IgnoredInvalidRepoCount)
+	fmt.Printf("  Ignored no diff repos: %d\n", stats.IgnoredNoDiffRepoCount)
+	fmt.Printf("  Ignored invalid permission targets: %d\n", stats.IgnoredInvalidPermissionCount)
+	fmt.Printf("  Ignored no diff permission targets: %d\n", stats.IgnoredNoDiffPermissionCount)
+	fmt.Printf("  Ignored duplicate permissions: %d\n", stats.IgnoredDuplicatePermissionCount)
 
-	fmt.Printf("Created users: %d\n", createdUserCount)
-	fmt.Printf("Imported groups: %d\n", importedGroupCount)
+	fmt.Printf("  Created users: %d\n", stats.CreatedUserCount)
+	fmt.Printf("  Imported groups: %d\n", stats.ImportedGroupCount)
 
-	fmt.Printf("Created repos: %d\n", createdRepoCount)
-	fmt.Printf("Updated repos: %d\n", updatedRepoCount)
-	fmt.Printf("Created permission targets: %d\n", createdPermissionCount)
-	fmt.Printf("Updated permission targets: %d\n", updatedPermissionCount)
+	fmt.Printf("  Created repos: %d\n", stats.CreatedRepoCount)
+	fmt.Printf("  Updated repos: %d\n", stats.UpdatedRepoCount)
+	fmt.Printf("  Created permission targets: %d\n", stats.CreatedPermissionCount)
+	fmt.Printf("  Updated permission targets: %d\n", stats.UpdatedPermissionCount)
 
 	return nil
 }
@@ -150,7 +154,7 @@ func provisionUsersAndGroups(
 					slices.Contains(repo.Manage, ug) ||
 					slices.Contains(repo.Scan, ug) {
 					repos = append(repos, repo.Name)
-					ignoredInvalidRepoCount++
+					stats.IgnoredInvalidRepoCount++
 					reposToProvision = slices.Delete(reposToProvision, i, i+1)
 					i--
 				}
@@ -180,7 +184,7 @@ func provisionUsersAndGroups(
 		if errGroup == nil && importedGroup {
 			fmt.Printf("Imported group '%s'\n", ug)
 			allgroups = append(allgroups, ArtifactoryGroup{GroupName: ug})
-			importedGroupCount++
+			stats.ImportedGroupCount++
 		}
 
 		if !importedGroup && errGroup == nil {
@@ -199,7 +203,7 @@ func provisionUsersAndGroups(
 			if errUser == nil && createdUser {
 				fmt.Printf("Created user '%s'\n", ug)
 				allusers = append(allusers, ArtifactoryUser{Username: ug})
-				createdUserCount++
+				stats.CreatedUserCount++
 			}
 		}
 
@@ -214,7 +218,7 @@ func provisionUsersAndGroups(
 					slices.Contains(repo.Scan, ug) {
 					fmt.Printf("'%s': Ignoring repo due to missing user/group: '%s'\n", repo.Name, ug)
 
-					ignoredInvalidRepoCount++
+					stats.IgnoredInvalidRepoCount++
 					reposToProvision = slices.Delete(reposToProvision, i, i+1)
 					i--
 				}
@@ -222,7 +226,7 @@ func provisionUsersAndGroups(
 		}
 	}
 
-	fmt.Printf("Created users: %d, imported groups: %d. (%d/%d)\n", createdUserCount, importedGroupCount, createdUserCount+importedGroupCount, len(newUsersAndGroups))
+	fmt.Printf("Created users: %d, imported groups: %d. (%d/%d)\n", stats.CreatedUserCount, stats.ImportedGroupCount, stats.CreatedUserCount+stats.ImportedGroupCount, len(newUsersAndGroups))
 
 	return reposToProvision, allusers, allgroups
 }
@@ -233,6 +237,7 @@ func provisionRepo(
 	token string,
 	repo Repo,
 	allrepos []ArtifactoryRepoDetailsResponse,
+	propertiesConfig PropertiesConfig,
 	dryRun bool) error {
 
 	if repo.Rclass == "" {
@@ -277,11 +282,11 @@ func provisionRepo(
 			return fmt.Errorf("see errors above for details")
 		}
 		if !diff {
-			ignoredNoDiffRepoCount++
+			stats.IgnoredNoDiffRepoCount++
 		} else {
 			fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
 
-			err := updateExistingRepo(client, baseurl, token, repo, existingRepo, dryRun)
+			err := updateExistingRepo(client, baseurl, token, repo, existingRepo, propertiesConfig, dryRun)
 			if err != nil {
 				return err
 			}
@@ -289,7 +294,7 @@ func provisionRepo(
 	} else {
 		fmt.Printf("'%s': Repo does not exist, creating...\n", repo.Name)
 
-		err := createNewRepo(client, baseurl, token, repo, dryRun)
+		err := createNewRepo(client, baseurl, token, repo, propertiesConfig, dryRun)
 		if err != nil {
 			return err
 		}
@@ -304,6 +309,7 @@ func updateExistingRepo(
 	token string,
 	repo Repo,
 	existingRepo *ArtifactoryRepoDetailsResponse,
+	propertiesConfig PropertiesConfig,
 	dryRun bool,
 ) error {
 
@@ -360,7 +366,14 @@ func updateExistingRepo(
 			fmt.Printf("'%s': Updated repo successfully.\n", repo.Name)
 		}
 	}
-	updatedRepoCount++
+	stats.UpdatedRepoCount++
+
+	if propertiesConfig.SetProperties {
+		err := setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -370,6 +383,7 @@ func createNewRepo(
 	baseurl string,
 	token string,
 	repo Repo,
+	propertiesConfig PropertiesConfig,
 	dryRun bool,
 ) error {
 
@@ -434,7 +448,88 @@ func createNewRepo(
 			fmt.Printf("'%s': Created repo successfully.\n", repo.Name)
 		}
 	}
-	createdRepoCount++
+	stats.CreatedRepoCount++
+
+	if propertiesConfig.SetProperties {
+		err := setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func setRepoProperties(
+	client *http.Client,
+	baseurl string,
+	token string,
+	repo Repo,
+	propertiesConfig PropertiesConfig,
+	dryRun bool,
+) error {
+
+	if repo.Rclass == "virtual" {
+		return nil
+	}
+
+	repoName := repo.Name
+	if repo.Rclass == "remote" {
+		repoName = repo.Name + "-cache"
+	}
+
+	var properties []string
+
+	if propertiesConfig.Url != "" {
+		properties = append(properties, fmt.Sprintf("%s.%s=%s", propertiesConfig.Prefix, "url", propertiesConfig.Url))
+	}
+
+	for key, value := range repo.ExtraFields {
+		if value == nil || value == "" || value == false || value == 0 {
+			continue
+		}
+
+		var valueStr string
+		switch v := value.(type) {
+		case []any:
+			var items []string
+			for _, item := range v {
+				items = append(items, fmt.Sprintf("%v", item))
+			}
+			valueStr = strings.Join(items, ",")
+		default:
+			valueStr = fmt.Sprintf("%v", value)
+		}
+
+		properties = append(properties, fmt.Sprintf("%s.%s=%s", propertiesConfig.Prefix, key, valueStr))
+	}
+
+	if len(properties) == 0 {
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties=%s&recursive=0", baseurl, repoName, strings.Join(properties, ";"))
+
+	req, err := http.NewRequest("PUT", url, strings.NewReader(""))
+	if err != nil {
+		return fmt.Errorf("error creating properties request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if !dryRun {
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("error setting repo properties: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 204 && resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("error setting repo properties, unexpected status: %s, body: %s", resp.Status, body)
+		}
+	}
+
+	fmt.Printf("'%s': Set properties: %s.\n", repoName, strings.Join(properties, ", "))
 
 	return nil
 }
@@ -484,7 +579,7 @@ func provisionPermissionTarget(
 			diff = true
 		}
 		if !diff {
-			ignoredNoDiffPermissionCount++
+			stats.IgnoredNoDiffPermissionCount++
 		} else {
 			for _, target := range existingPermission.Resources.Artifact.Targets {
 				include := target.IncludePatterns
@@ -581,7 +676,7 @@ func updateExistingPermission(
 			fmt.Printf("'%s': Updated permission target successfully.\n", permissionName)
 		}
 	}
-	updatedPermissionCount++
+	stats.UpdatedPermissionCount++
 
 	return nil
 }
@@ -653,7 +748,7 @@ func createNewPermission(
 			fmt.Printf("'%s': Created permission target successfully.\n", permissionName)
 		}
 	}
-	createdPermissionCount++
+	stats.CreatedPermissionCount++
 
 	allpermissiondetails = append(allpermissiondetails, artifactorypermissiontarget)
 
@@ -792,7 +887,7 @@ func getUsersAndGroupsPermission(
 			if users[ug] != nil {
 				if slices.Contains(users[ug], permission) {
 					fmt.Printf("'%s': Ignoring duplicate permission '%s' for user '%s'\n", reponame, permission, ug)
-					ignoredDuplicatePermissionCount++
+					stats.IgnoredDuplicatePermissionCount++
 				} else {
 					users[ug] = append(users[ug], permission)
 				}
@@ -803,7 +898,7 @@ func getUsersAndGroupsPermission(
 			if groups[ug] != nil {
 				if slices.Contains(groups[ug], permission) {
 					fmt.Printf("'%s': Ignoring duplicate permission '%s' for group '%s'\n", reponame, permission, ug)
-					ignoredDuplicatePermissionCount++
+					stats.IgnoredDuplicatePermissionCount++
 				} else {
 					groups[ug] = append(groups[ug], permission)
 				}

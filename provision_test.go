@@ -49,7 +49,7 @@ func TestProvisionSimple(t *testing.T) {
 	}
 	for i, tc := range tests {
 		var client *http.Client
-		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, LdapConfig{}, tc.dryRun)
+		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 		if err != nil {
 			t.Errorf("ProvisionSimple (%d/%d): error = %v", i+1, len(tests), err)
 		}
@@ -120,7 +120,7 @@ func TestProvisionPermissions(t *testing.T) {
 		return reponse, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionPermissions: error = %v", err)
 	}
@@ -206,7 +206,7 @@ func TestProvisionRenamedPermissions(t *testing.T) {
 		return reponse, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionRenamedPermissions: error = %v", err)
 	}
@@ -372,9 +372,9 @@ func TestProvisionLdap(t *testing.T) {
 		fmt.Printf("Mock queryldapFn called with server='%s', baseDN='%s', filter='%s', bindDN='%s', bindPW='%s', attrs=%v\n",
 			server, baseDN, filter, bindDN, bindPW, attrs)
 
-		if filter == "(&(objectClass=user)(cn=test-user))" && len(attrs) == 1 && attrs[0] == "mail" {
+		if filter == "(&(objectClass=user)(cn=test-user))" && len(attrs) == 2 && attrs[0] == "mail" && attrs[1] == "userPrincipalName" {
 			entry := &ldap.Entry{DN: "cn=test-user,dc=example,dc=org"}
-			entry.Attributes = []*ldap.EntryAttribute{{Name: "mail", Values: []string{"noreply@example.com"}}}
+			entry.Attributes = []*ldap.EntryAttribute{{Name: "mail", Values: []string{"noreply@example.com"}}, {Name: "userPrincipalName", Values: []string{"test-user@example.com"}}}
 			return []*ldap.Entry{entry}, nil
 		}
 
@@ -395,7 +395,7 @@ func TestProvisionLdap(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
 	}
@@ -552,8 +552,117 @@ func TestProvisionLdapFail(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
+	}
+}
+
+// Test setRepoProperties function
+func TestSetRepoProperties(t *testing.T) {
+	repo := Repo{
+		Name:        "test-repo",
+		Description: "Test repository",
+		Rclass:      "local",
+		PackageType: "docker",
+	}
+
+	propertiesConfig := PropertiesConfig{
+		Prefix: "mycorp.",
+		Url:    "https://example.com/docs",
+	}
+
+	var capturedURL string
+	var capturedMethod string
+
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		capturedURL = req.URL.String()
+		capturedMethod = req.Method
+
+		// Verify authorization header is set
+		authHeader := req.Header.Get("Authorization")
+		if authHeader != "Bearer test-token" {
+			t.Errorf("SetRepoProperties: expected Authorization header 'Bearer test-token', got '%s'", authHeader)
+		}
+
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	if err != nil {
+		t.Errorf("SetRepoProperties: unexpected error = %v", err)
+	}
+
+	// Verify the request method
+	if capturedMethod != "PUT" {
+		t.Errorf("SetRepoProperties: expected method PUT, got %s", capturedMethod)
+	}
+
+	// Verify the URL contains expected properties
+	if !strings.Contains(capturedURL, "https://artifactory.example.com/artifactory/api/storage/test-repo?properties=") {
+		t.Errorf("SetRepoProperties: URL format incorrect: %s", capturedURL)
+	}
+
+	// Check for specific properties that should be included
+	// Note: propertiesConfig.Url is added with capital U, but JSON marshaled repo fields are lowercase
+	if !strings.Contains(capturedURL, "mycorp.Url=https://example.com/docs") {
+		t.Errorf("SetRepoProperties: missing Url property in %s", capturedURL)
+	}
+
+	if !strings.Contains(capturedURL, "mycorp.name=test-repo") {
+		t.Errorf("SetRepoProperties: missing name property in %s", capturedURL)
+	}
+
+	if !strings.Contains(capturedURL, "mycorp.description=Test repository") {
+		t.Errorf("SetRepoProperties: missing description property in %s", capturedURL)
+	}
+
+	if !strings.Contains(capturedURL, "mycorp.packageType=docker") {
+		t.Errorf("SetRepoProperties: missing packageType property in %s", capturedURL)
+	}
+
+	// Rclass is set to "local" so it SHOULD be included (it's not empty)
+	if !strings.Contains(capturedURL, "mycorp.rclass=local") {
+		t.Errorf("SetRepoProperties: missing rclass property in %s", capturedURL)
+	}
+}
+
+// Test setRepoProperties with empty properties (should not fail, just return nil)
+func TestSetRepoPropertiesEmpty(t *testing.T) {
+	repo := Repo{
+		Name: "test-repo",
+		// All other fields are empty/zero
+	}
+
+	propertiesConfig := PropertiesConfig{
+		Prefix: "mycorp.",
+		Url:    "",
+	}
+
+	var httpCalled bool
+
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		httpCalled = true
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	if err != nil {
+		t.Errorf("SetRepoPropertiesEmpty: unexpected error = %v", err)
+	}
+
+	// Even though most fields are empty, Name is set to "test-repo",
+	// so there will be at least one property (mycorp.name=test-repo)
+	// and an HTTP call will be made.
+	if !httpCalled {
+		t.Errorf("SetRepoPropertiesEmpty: HTTP call should be made when Name property exists")
 	}
 }
