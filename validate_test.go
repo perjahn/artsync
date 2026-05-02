@@ -44,7 +44,7 @@ func TestValidationSharedPermissions(t *testing.T) {
 	existingRepos := []ArtifactoryRepoDetailsResponse{}
 	existingPermissions := []ArtifactoryPermissionDetails{}
 
-	ignoredInvalidRepoCount = 0
+	stats.IgnoredInvalidRepoCount = 0
 	reposToProvision, err := Validate(reposToProvision, existingRepos, existingPermissions)
 	if err != nil {
 		t.Errorf("ValidationSharedPermissions: error = %v", err)
@@ -66,8 +66,8 @@ func TestValidationSharedPermissions(t *testing.T) {
 		}
 	}
 	wantIgnoreCount := 5
-	if ignoredInvalidRepoCount != wantIgnoreCount {
-		t.Errorf("ValidationSharedPermissions: unexpected ignore count: got: '%d', want: '%d'", ignoredInvalidRepoCount, wantIgnoreCount)
+	if stats.IgnoredInvalidRepoCount != wantIgnoreCount {
+		t.Errorf("ValidationSharedPermissions: unexpected ignore count: got: '%d', want: '%d'", stats.IgnoredInvalidRepoCount, wantIgnoreCount)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestValidationSharedExistingPermissions(t *testing.T) {
 		},
 	}
 
-	ignoredInvalidRepoCount = 0
+	stats.IgnoredInvalidRepoCount = 0
 	reposToProvision, err := Validate(reposToProvision, existingRepos, existingPermissions)
 	if err != nil {
 		t.Errorf("ValidationSharedExistingPermissions: error = %v", err)
@@ -119,8 +119,8 @@ func TestValidationSharedExistingPermissions(t *testing.T) {
 		}
 	}
 	wantIgnoreCount := 1
-	if ignoredInvalidRepoCount != wantIgnoreCount {
-		t.Errorf("ValidationSharedExistingPermissions: unexpected ignore count: want: '%d', was: '%d'", wantIgnoreCount, ignoredInvalidRepoCount)
+	if stats.IgnoredInvalidRepoCount != wantIgnoreCount {
+		t.Errorf("ValidationSharedExistingPermissions: unexpected ignore count: want: '%d', was: '%d'", wantIgnoreCount, stats.IgnoredInvalidRepoCount)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestValidateCasePermissionsWithUppercase(t *testing.T) {
 	existingRepos := []ArtifactoryRepoDetailsResponse{}
 	existingPermissions := []ArtifactoryPermissionDetails{}
 
-	ignoredInvalidRepoCount = 0
+	stats.IgnoredInvalidRepoCount = 0
 	reposToProvision, err := Validate(reposToProvision, existingRepos, existingPermissions)
 	if err != nil {
 		t.Errorf("ValidateCasePermissions: error = %v", err)
@@ -169,8 +169,8 @@ func TestValidateCasePermissionsWithUppercase(t *testing.T) {
 		}
 	}
 	wantIgnoreCount := 0
-	if ignoredInvalidRepoCount != wantIgnoreCount {
-		t.Errorf("ValidateCasePermissions: unexpected ignore count: want: '%d', got: '%d'", wantIgnoreCount, ignoredInvalidRepoCount)
+	if stats.IgnoredInvalidRepoCount != wantIgnoreCount {
+		t.Errorf("ValidateCasePermissions: unexpected ignore count: want: '%d', got: '%d'", wantIgnoreCount, stats.IgnoredInvalidRepoCount)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestValidateCasePermissionsAllLowercase(t *testing.T) {
 	existingRepos := []ArtifactoryRepoDetailsResponse{}
 	existingPermissions := []ArtifactoryPermissionDetails{}
 
-	ignoredInvalidRepoCount = 0
+	stats.IgnoredInvalidRepoCount = 0
 	reposToProvision, err := Validate(reposToProvision, existingRepos, existingPermissions)
 	if err != nil {
 		t.Errorf("ValidateCasePermissionsAllLowercase: error = %v", err)
@@ -203,7 +203,7 @@ func TestValidateCasePermissionsAllLowercase(t *testing.T) {
 		t.Errorf("ValidateCasePermissionsAllLowercase: expected %d repos to provision, got %d", wantCount, len(reposToProvision))
 	}
 	wantIgnoreCount := 0
-	if ignoredInvalidRepoCount != wantIgnoreCount {
-		t.Errorf("ValidateCasePermissionsAllLowercase: unexpected ignore count: want: '%d', got: '%d'", wantIgnoreCount, ignoredInvalidRepoCount)
+	if stats.IgnoredInvalidRepoCount != wantIgnoreCount {
+		t.Errorf("ValidateCasePermissionsAllLowercase: unexpected ignore count: want: '%d', got: '%d'", wantIgnoreCount, stats.IgnoredInvalidRepoCount)
 	}
 }

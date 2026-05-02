@@ -27,13 +27,14 @@ func main() {
 	useAllPermissionTargetsAsSourceFlag := flag.Bool("a", false, "Use all permission targets as source, when generating.")
 	combineReposFlag := flag.Bool("c", false, "Combine identical repos, when generating.")
 	dryRunFlag := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
-	provisionEmpty := flag.Bool("e", false, "Provision empty files.")
+	provisionEmptyFlag := flag.Bool("e", false, "Provision empty files.")
 	showDiffFlag := flag.Bool("f", false, "Show json diff, when applying permission targets.")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
-	useCacheFlag := flag.Bool("h", false, "Use local cache folder instead of artifactory api, when retrieving.")
+	useCacheFlag := flag.Bool("h", false, "Use local cache folder instead of Artifactory api, when retrieving.")
+	propertiesConfigFilenameString := flag.String("i", "", "Write properties to Artifactory, configuration file.")
 	generatejsonFlag := flag.Bool("j", false, "Generate output in json format.")
 	ignoreCertFlag := flag.Bool("k", false, "Ignore https cert validation errors.")
-	importUsersAndGroupsFlag := flag.Bool("l", false, "Import missing users and groups from ldap.")
+	importUsersAndGroupsFilenameString := flag.String("l", "", "Import missing users and groups from ldap, configuration file.")
 	onlyGenerateMatchingReposFlag := flag.Bool("m", false, "Only generate repos that has a matching named permission target.")
 	allowpatternsFlag := flag.Bool("p", false, "Allow permission targets include/exclude patterns, when provisioning. This will delete all custom filters.")
 	onlyGenerateCleanReposFlag := flag.Bool("q", false, "Only generate repos whose permission targets are default, i.e. without any include/exclude patterns.")
@@ -42,24 +43,31 @@ func main() {
 	overwriteFlag := flag.Bool("w", false, "Allow overwriting of existing repo file, when generating.")
 	flag.Parse()
 
-	useAllPermissionTargetsAsSource := getFlagEnv(*useAllPermissionTargetsAsSourceFlag, "ARTSYNC_USE_ALL_PERMISSIONS")
-	combineRepos := getFlagEnv(*combineReposFlag, "ARTSYNC_COMBINE_REPOS")
-	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN")
-	showDiff := getFlagEnv(*showDiffFlag, "ARTSYNC_SHOW_DIFF")
-	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE")
-	useCache := getFlagEnv(*useCacheFlag, "ARTSYNC_USE_CACHE")
-	generatejson := getFlagEnv(*generatejsonFlag, "ARTSYNC_GENERATE_JSON")
-	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT")
-	importUsersAndGroups := getFlagEnv(*importUsersAndGroupsFlag, "ARTSYNC_IMPORT_LDAP_USERS_AND_GROUPS")
-	onlyGenerateMatchingRepos := getFlagEnv(*onlyGenerateMatchingReposFlag, "ARTSYNC_ONLY_GENERATE_MATCHING")
-	allowpatterns := getFlagEnv(*allowpatternsFlag, "ARTSYNC_ALLOW_PATTERNS")
-	onlyGenerateCleanRepos := getFlagEnv(*onlyGenerateCleanReposFlag, "ARTSYNC_ONLY_GENERATE_CLEAN_REPOS")
-	allowRenamedPermissions := getFlagEnv(*allowRenamedPermissionsFlag, "ARTSYNC_ALLOW_RENAMED_PERMISSIONS")
-	split := getFlagEnv(*splitFlag, "ARTSYNC_SPLIT")
-	overwrite := getFlagEnv(*overwriteFlag, "ARTSYNC_OVERWRITE")
+	visitedFlags := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		visitedFlags[f.Name] = true
+	})
+
+	useAllPermissionTargetsAsSource := getFlagEnv(*useAllPermissionTargetsAsSourceFlag, "ARTSYNC_USE_ALL_PERMISSIONS", visitedFlags["a"])
+	combineRepos := getFlagEnv(*combineReposFlag, "ARTSYNC_COMBINE_REPOS", visitedFlags["c"])
+	dryRun := getFlagEnv(*dryRunFlag, "ARTSYNC_DRYRUN", visitedFlags["d"])
+	provisionEmpty := getFlagEnv(*provisionEmptyFlag, "ARTSYNC_PROVISION_EMPTY", visitedFlags["e"])
+	showDiff := getFlagEnv(*showDiffFlag, "ARTSYNC_SHOW_DIFF", visitedFlags["f"])
+	generate := getFlagEnv(*generateFlag, "ARTSYNC_GENERATE", visitedFlags["g"])
+	useCache := getFlagEnv(*useCacheFlag, "ARTSYNC_USE_CACHE", visitedFlags["h"])
+	propertiesConfigFilename := getStringEnv(*propertiesConfigFilenameString, "ARTSYNC_PROPERTIES_CONFIG_FILENAME", visitedFlags["i"])
+	generatejson := getFlagEnv(*generatejsonFlag, "ARTSYNC_GENERATE_JSON", visitedFlags["j"])
+	ignoreCert := getFlagEnv(*ignoreCertFlag, "ARTSYNC_IGNORE_CERT", visitedFlags["k"])
+	importUsersAndGroupsFilename := getStringEnv(*importUsersAndGroupsFilenameString, "ARTSYNC_IMPORT_LDAP_USERS_AND_GROUPS", visitedFlags["l"])
+	onlyGenerateMatchingRepos := getFlagEnv(*onlyGenerateMatchingReposFlag, "ARTSYNC_ONLY_GENERATE_MATCHING", visitedFlags["m"])
+	allowpatterns := getFlagEnv(*allowpatternsFlag, "ARTSYNC_ALLOW_PATTERNS", visitedFlags["p"])
+	onlyGenerateCleanRepos := getFlagEnv(*onlyGenerateCleanReposFlag, "ARTSYNC_ONLY_GENERATE_CLEAN_REPOS", visitedFlags["q"])
+	allowRenamedPermissions := getFlagEnv(*allowRenamedPermissionsFlag, "ARTSYNC_ALLOW_RENAMED_PERMISSIONS", visitedFlags["r"])
+	split := getFlagEnv(*splitFlag, "ARTSYNC_SPLIT", visitedFlags["s"])
+	overwrite := getFlagEnv(*overwriteFlag, "ARTSYNC_OVERWRITE", visitedFlags["w"])
 
 	args := flag.Args()
-	if len(args) < 3 || args[0] == "" || args[1] == "" || args[2] == "" {
+	if len(args) < 3 || slices.ContainsFunc(args, func(arg string) bool { return arg == "" }) {
 		usage()
 		os.Exit(1)
 	}
@@ -68,45 +76,52 @@ func main() {
 	token := getToken(args[1])
 	repofiles := getRepoFiles(args[2:])
 
-	if generate && len(repofiles) > 1 {
-		fmt.Println("Error: Only one repo file is allowed when using -g flag.")
-		os.Exit(1)
-	}
+	if generate {
+		if len(repofiles) > 1 {
+			fmt.Println("Error: Only one repo file is allowed when using -g flag.")
+			os.Exit(1)
+		}
 
-	if !generate && useAllPermissionTargetsAsSource {
-		fmt.Println("Error: -a flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && combineRepos {
-		fmt.Println("Error: -c flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && generatejson {
-		fmt.Println("Error: -j flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && onlyGenerateMatchingRepos {
-		fmt.Println("Error: -m flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && onlyGenerateCleanRepos {
-		fmt.Println("Error: -q flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && allowRenamedPermissions {
-		fmt.Println("Error: -r flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && overwrite {
-		fmt.Println("Error: -w flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
-	if !generate && split {
-		fmt.Println("Error: -s flag can only be used together with -g flag.")
-		os.Exit(1)
-	}
+		if !overwrite {
+			if _, err := os.Stat(repofiles[0]); err == nil {
+				fmt.Printf("Error: File already exists, will not overwrite: '%s'\n", repofiles[0])
+				os.Exit(1)
+			}
+		}
+	} else {
+		if useAllPermissionTargetsAsSource {
+			fmt.Println("Error: -a flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if combineRepos {
+			fmt.Println("Error: -c flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if generatejson {
+			fmt.Println("Error: -j flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if onlyGenerateMatchingRepos {
+			fmt.Println("Error: -m flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if onlyGenerateCleanRepos {
+			fmt.Println("Error: -q flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if allowRenamedPermissions {
+			fmt.Println("Error: -r flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if overwrite {
+			fmt.Println("Error: -w flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
+		if split {
+			fmt.Println("Error: -s flag can only be used together with -g flag.")
+			os.Exit(1)
+		}
 
-	if !generate {
 		success := true
 		for _, repofile := range repofiles {
 			if _, err := os.Stat(repofile); os.IsNotExist(err) {
@@ -115,13 +130,6 @@ func main() {
 			}
 		}
 		if !success {
-			os.Exit(1)
-		}
-	}
-
-	if generate && !overwrite {
-		if _, err := os.Stat(repofiles[0]); err == nil {
-			fmt.Printf("Error: File already exists, will not overwrite: '%s'\n", repofiles[0])
 			os.Exit(1)
 		}
 	}
@@ -140,14 +148,14 @@ func main() {
 	var reposToProvision []Repo
 
 	if !generate {
-		reposToProvision = LoadRepoFiles(repofiles, *provisionEmpty)
+		reposToProvision = LoadRepoFiles(repofiles, provisionEmpty)
 		if len(reposToProvision) == 0 {
 			fmt.Println("Error: No valid repos to provision found in the provided repo files.")
 			os.Exit(1)
 		}
 	}
 
-	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, importUsersAndGroups, useCache)
+	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, importUsersAndGroupsFilename != "", useCache)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -161,10 +169,19 @@ func main() {
 		}
 	} else {
 		var ldapConfig LdapConfig
-		if importUsersAndGroups {
-			ldapConfig, err = loadLdapConfig(importUsersAndGroups, "ldap.config", ldapsettings, ldapgroupsettings)
+		if importUsersAndGroupsFilename != "" {
+			ldapConfig, err = loadLdapConfig(importUsersAndGroupsFilename, ldapsettings, ldapgroupsettings)
 			if err != nil {
 				fmt.Printf("Error reading ldap config: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		var propertiesConfig PropertiesConfig
+		if propertiesConfigFilename != "" {
+			propertiesConfig, err = loadPropertiesConfig(propertiesConfigFilename)
+			if err != nil {
+				fmt.Printf("Error reading properties config: %v\n", err)
 				os.Exit(1)
 			}
 		}
@@ -175,7 +192,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, dryRun)
+		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, propertiesConfig, dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
@@ -183,18 +200,36 @@ func main() {
 	}
 }
 
-func getFlagEnv(value bool, envname string) bool {
-	envValue := strings.TrimSpace(os.Getenv(envname))
+func getFlagEnv(flagValue bool, envName string, flagWasVisited bool) bool {
+	if flagWasVisited {
+		return flagValue
+	}
+
+	envValue := strings.TrimSpace(os.Getenv(envName))
 	if envValue == "1" || strings.EqualFold(envValue, "true") {
 		return true
 	}
 	if envValue == "0" || strings.EqualFold(envValue, "false") {
 		return false
 	}
-	return value
+
+	return flagValue
 }
 
-func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
+func getStringEnv(flagValue string, envName string, flagWasVisited bool) string {
+	if flagWasVisited {
+		return flagValue
+	}
+
+	envValue := strings.TrimSpace(os.Getenv(envName))
+	if envValue != "" {
+		return envValue
+	}
+
+	return flagValue
+}
+
+func loadLdapConfig(configFile string, ldapsettings []ArtifactoryLDAPSettings, ldapgroupsettings []ArtifactoryLDAPGroupSettings) (LdapConfig, error) {
 	empty := LdapConfig{}
 
 	if len(ldapsettings) == 0 || len(ldapgroupsettings) == 0 {
@@ -211,7 +246,7 @@ func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings [
 
 	if envLdapUsername != "" && envLdapPassword != "" && envArtifactoryUsername != "" && envArtifactoryPassword != "" {
 		return LdapConfig{
-			ImportUsersAndGroups: importUsersAndGroups,
+			ImportUsersAndGroups: true,
 			LdapUsername:         envLdapUsername,
 			LdapPassword:         envLdapPassword,
 			ArtifactoryUsername:  envArtifactoryUsername,
@@ -250,11 +285,51 @@ func loadLdapConfig(importUsersAndGroups bool, configFile string, ldapsettings [
 		ldapConfig.ExcludeSettings = envExcludeSettings
 	}
 
-	ldapConfig.ImportUsersAndGroups = importUsersAndGroups
+	ldapConfig.ImportUsersAndGroups = true
 	ldapConfig.Ldapsettings = filterLdapSettings(ldapsettings, ldapConfig.ExcludeSettings)
 	ldapConfig.Ldapgroupsettings = filterLdapGroupSettings(ldapgroupsettings, ldapConfig.ExcludeSettings)
 
 	return ldapConfig, nil
+}
+
+func loadPropertiesConfig(configFile string) (PropertiesConfig, error) {
+	empty := PropertiesConfig{}
+
+	envPropertiesPrefix := os.Getenv("ARTSYNC_PROPERTIES_PREFIX")
+	envPropertiesUrl := os.Getenv("ARTSYNC_PROPERTIES_URL")
+	if envPropertiesPrefix != "" && envPropertiesUrl != "" {
+		return PropertiesConfig{
+			SetProperties: true,
+			Prefix:        envPropertiesPrefix,
+			Url:           envPropertiesUrl,
+		}, nil
+	}
+
+	var propertiesConfig PropertiesConfig
+
+	fmt.Printf("Using properties config file: '%s'\n", configFile)
+
+	if configFile != "" {
+		data, err := os.ReadFile(configFile)
+		if err != nil {
+			return empty, fmt.Errorf("Error reading properties config file '%s': %v\n", configFile, err)
+		}
+		err = json.Unmarshal(data, &propertiesConfig)
+		if err != nil {
+			return empty, fmt.Errorf("Error parsing properties config file '%s': %v\n", configFile, err)
+		}
+	}
+
+	if envPropertiesPrefix != "" {
+		propertiesConfig.Prefix = envPropertiesPrefix
+	}
+	if envPropertiesUrl != "" {
+		propertiesConfig.Url = envPropertiesUrl
+	}
+
+	propertiesConfig.SetProperties = true
+
+	return propertiesConfig, nil
 }
 
 func filterLdapSettings(ldapsettings []ArtifactoryLDAPSettings, excludeSettings []string) []ArtifactoryLDAPSettings {
@@ -353,7 +428,7 @@ func usage() {
 	fmt.Println("This tool is used to provision Artifactory repositories and matching permission targets.")
 	fmt.Println("It can also generate a declarative file based on existing repos and permission targets.")
 	fmt.Println()
-	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-j] [-k] [-l] [-m] [-p] [-q] [-r] [-s] [-w] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
+	fmt.Println("Usage: artsync [-a] [-c] [-d] [-e] [-f] [-g] [-i configfile] [-j] [-k] [-l configfile] [-m] [-p] [-q] [-r] [-s] [-w] <baseurl> <tokenfile> <repofile1> [repofile2] ...")
 	fmt.Println()
 	fmt.Println("baseurl:    Base URL of Artifactory instance, like https://artifactory.example.com")
 	fmt.Println("tokenfile:  File with access token (aka bearer token).")

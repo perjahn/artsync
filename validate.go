@@ -41,7 +41,7 @@ func validateSharedPermissions(reposToProvision []Repo, existingPermissions []Ar
 			if permissionName1 == permissionName2 {
 				if !found {
 					fmt.Printf("Warning: Ignoring repo '%s', due to shared permission with repo '%s', permission name: '%s' (new permission/1)\n", repo1.Name, repo2.Name, permissionName1)
-					ignoredInvalidRepoCount++
+					stats.IgnoredInvalidRepoCount++
 					reposToProvision = slices.Delete(reposToProvision, i, i+1)
 					found = true
 					i--
@@ -49,7 +49,7 @@ func validateSharedPermissions(reposToProvision []Repo, existingPermissions []Ar
 				}
 
 				fmt.Printf("Warning: Ignoring repo '%s', due to shared permission with repo '%s', permission name: '%s' (new permission/2)\n", repo2.Name, repo1.Name, permissionName1)
-				ignoredInvalidRepoCount++
+				stats.IgnoredInvalidRepoCount++
 				reposToProvision = slices.Delete(reposToProvision, j, j+1)
 				j--
 			}
@@ -74,7 +74,7 @@ func validateSharedPermissions(reposToProvision []Repo, existingPermissions []Ar
 				for targetName := range permission.Resources.Artifact.Targets {
 					if repo1.Name != targetName {
 						fmt.Printf("Warning: Ignoring repo '%s', due to shared permission with repo '%s', permission name: '%s' (existing permission)\n", repo1.Name, targetName, permissionName1)
-						ignoredInvalidRepoCount++
+						stats.IgnoredInvalidRepoCount++
 						reposToProvision = slices.Delete(reposToProvision, i, i+1)
 						break
 					}
@@ -91,14 +91,14 @@ func validateRepoNames(reposToProvision []Repo) []Repo {
 		repo := reposToProvision[i]
 		if repo.Name == "" {
 			fmt.Printf("Warning: Ignoring repo '%s', due to missing name for repo.\n", repo.Name)
-			ignoredInvalidRepoCount++
+			stats.IgnoredInvalidRepoCount++
 			reposToProvision = slices.Delete(reposToProvision, i, i+1)
 			i--
 		}
 
 		if !isValidRepoName(repo.Name) {
 			fmt.Printf("Warning: Ignoring repo '%s', due to invalid name for repo.\n", repo.Name)
-			ignoredInvalidRepoCount++
+			stats.IgnoredInvalidRepoCount++
 			reposToProvision = slices.Delete(reposToProvision, i, i+1)
 			i--
 		}
