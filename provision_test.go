@@ -565,21 +565,24 @@ func TestSetRepoProperties(t *testing.T) {
 		Description: "Test repository",
 		Rclass:      "local",
 		PackageType: "docker",
+		ExtraFields: map[string]any{
+			"owner": "admin",
+		},
 	}
 
 	propertiesConfig := PropertiesConfig{
-		Prefix: "mycorp.",
-		Url:    "https://example.com/docs",
+		SetProperties: true,
+		Prefix:        "mycorp",
+		Url:           "https://example.com/docs",
 	}
 
-	var capturedURL string
+	var capturedUrl string
 	var capturedMethod string
 
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
-		capturedURL = req.URL.String()
+		capturedUrl = req.URL.String()
 		capturedMethod = req.Method
 
-		// Verify authorization header is set
 		authHeader := req.Header.Get("Authorization")
 		if authHeader != "Bearer test-token" {
 			t.Errorf("SetRepoProperties: expected Authorization header 'Bearer test-token', got '%s'", authHeader)
@@ -597,50 +600,34 @@ func TestSetRepoProperties(t *testing.T) {
 		t.Errorf("SetRepoProperties: unexpected error = %v", err)
 	}
 
-	// Verify the request method
 	if capturedMethod != "PUT" {
 		t.Errorf("SetRepoProperties: expected method PUT, got %s", capturedMethod)
 	}
 
-	// Verify the URL contains expected properties
-	if !strings.Contains(capturedURL, "https://artifactory.example.com/artifactory/api/storage/test-repo?properties=") {
-		t.Errorf("SetRepoProperties: URL format incorrect: %s", capturedURL)
+	if !strings.Contains(capturedUrl, "https://artifactory.example.com/artifactory/api/storage/test-repo?properties=") {
+		t.Errorf("SetRepoProperties: url format incorrect: %s", capturedUrl)
 	}
 
-	// Check for specific properties that should be included
-	// Note: propertiesConfig.Url is added with capital U, but JSON marshaled repo fields are lowercase
-	if !strings.Contains(capturedURL, "mycorp.Url=https://example.com/docs") {
-		t.Errorf("SetRepoProperties: missing Url property in %s", capturedURL)
+	if !strings.Contains(capturedUrl, "mycorp.url=https://example.com/docs") {
+		t.Errorf("SetRepoProperties: missing url property in %s", capturedUrl)
 	}
 
-	if !strings.Contains(capturedURL, "mycorp.name=test-repo") {
-		t.Errorf("SetRepoProperties: missing name property in %s", capturedURL)
-	}
-
-	if !strings.Contains(capturedURL, "mycorp.description=Test repository") {
-		t.Errorf("SetRepoProperties: missing description property in %s", capturedURL)
-	}
-
-	if !strings.Contains(capturedURL, "mycorp.packageType=docker") {
-		t.Errorf("SetRepoProperties: missing packageType property in %s", capturedURL)
-	}
-
-	// Rclass is set to "local" so it SHOULD be included (it's not empty)
-	if !strings.Contains(capturedURL, "mycorp.rclass=local") {
-		t.Errorf("SetRepoProperties: missing rclass property in %s", capturedURL)
+	if !strings.Contains(capturedUrl, "mycorp.owner=admin") {
+		t.Errorf("SetRepoProperties: missing owner property in %s", capturedUrl)
 	}
 }
 
-// Test setRepoProperties with empty properties (should not fail, just return nil)
+// Test setRepoProperties with empty ExtraFields (should not fail, just return nil)
 func TestSetRepoPropertiesEmpty(t *testing.T) {
 	repo := Repo{
-		Name: "test-repo",
-		// All other fields are empty/zero
+		Name:        "test-repo",
+		ExtraFields: map[string]any{},
 	}
 
 	propertiesConfig := PropertiesConfig{
-		Prefix: "mycorp.",
-		Url:    "",
+		SetProperties: true,
+		Prefix:        "mycorp",
+		Url:           "abc123",
 	}
 
 	var httpCalled bool
@@ -659,10 +646,7 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 		t.Errorf("SetRepoPropertiesEmpty: unexpected error = %v", err)
 	}
 
-	// Even though most fields are empty, Name is set to "test-repo",
-	// so there will be at least one property (mycorp.name=test-repo)
-	// and an HTTP call will be made.
 	if !httpCalled {
-		t.Errorf("SetRepoPropertiesEmpty: HTTP call should be made when Name property exists")
+		t.Errorf("SetRepoPropertiesEmpty: http call should be made when url property exists")
 	}
 }
