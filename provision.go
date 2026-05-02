@@ -60,7 +60,7 @@ func Provision(
 			fmt.Printf("'%s': Warning: Ignoring repo: %v\n", repo.Name, err)
 			stats.IgnoredInvalidRepoCount++
 		} else {
-			err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, showDiff, allowpatterns, dryRun)
+			err = provisionPermissionTarget(client, baseurl, token, repo, allusers, allpermissiondetails, showDiff, allowpatterns, propertiesConfig, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", repo.Name, err)
 				stats.IgnoredInvalidPermissionCount++
@@ -368,11 +368,9 @@ func updateExistingRepo(
 	}
 	stats.UpdatedRepoCount++
 
-	if propertiesConfig.SetProperties {
-		err := setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
-		if err != nil {
-			return err
-		}
+	err = setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -450,11 +448,9 @@ func createNewRepo(
 	}
 	stats.CreatedRepoCount++
 
-	if propertiesConfig.SetProperties {
-		err := setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
-		if err != nil {
-			return err
-		}
+	err = setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -468,6 +464,10 @@ func setRepoProperties(
 	propertiesConfig PropertiesConfig,
 	dryRun bool,
 ) error {
+
+	if !propertiesConfig.SetProperties {
+		return nil
+	}
 
 	if repo.Rclass == "virtual" {
 		return nil
@@ -543,6 +543,7 @@ func provisionPermissionTarget(
 	allpermissiondetails []ArtifactoryPermissionDetails,
 	showDiff bool,
 	allowpatterns bool,
+	propertiesConfig PropertiesConfig,
 	dryRun bool) error {
 
 	if repo.Rclass == "virtual" {
@@ -556,8 +557,9 @@ func provisionPermissionTarget(
 		permissionName = repo.Name
 	}
 
+	repoName := repo.Name
 	if repo.Rclass == "remote" {
-		permissionName = permissionName + "-cache"
+		repoName = repo.Name + "-cache"
 	}
 
 	var existingPermission *ArtifactoryPermissionDetails
@@ -592,12 +594,12 @@ func provisionPermissionTarget(
 
 			fmt.Printf("'%s': Permission target already exists, updating...\n", permissionName)
 
-			updateExistingPermission(client, baseurl, token, repo, permissionName, users, groups, existingPermission, showDiff, dryRun)
+			updateExistingPermission(client, baseurl, token, repo, repoName, permissionName, users, groups, existingPermission, showDiff, propertiesConfig, dryRun)
 		}
 	} else {
 		fmt.Printf("'%s': Permission target does not exist, creating...\n", permissionName)
 
-		createNewPermission(client, baseurl, token, repo, permissionName, allpermissiondetails, users, groups, dryRun)
+		createNewPermission(client, baseurl, token, repo, repoName, permissionName, allpermissiondetails, users, groups, propertiesConfig, dryRun)
 	}
 
 	return nil
@@ -608,11 +610,13 @@ func updateExistingPermission(
 	baseurl string,
 	token string,
 	repo Repo,
+	repoName string,
 	permissionName string,
 	users map[string][]string,
 	groups map[string][]string,
 	existingPermission *ArtifactoryPermissionDetails,
 	showDiff bool,
+	propertiesConfig PropertiesConfig,
 	dryRun bool) error {
 
 	if !equalStringSliceMaps(existingPermission.Resources.Artifact.Actions.Users, users) {
@@ -630,7 +634,7 @@ func updateExistingPermission(
 			Groups: groups,
 		},
 		Targets: map[string]ArtifactoryPermissionDetailsTarget{
-			repo.Name: {
+			repoName: {
 				existingPermission.Resources.Artifact.Targets[repo.Name].IncludePatterns,
 				existingPermission.Resources.Artifact.Targets[repo.Name].ExcludePatterns,
 			},
@@ -678,6 +682,11 @@ func updateExistingPermission(
 	}
 	stats.UpdatedPermissionCount++
 
+	err = setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -686,10 +695,12 @@ func createNewPermission(
 	baseurl string,
 	token string,
 	repo Repo,
+	repoName string,
 	permissionName string,
 	allpermissiondetails []ArtifactoryPermissionDetails,
 	users map[string][]string,
 	groups map[string][]string,
+	propertiesConfig PropertiesConfig,
 	dryRun bool) error {
 
 	printDiffPermissions(repo, permissionName, map[string][]string{}, users, "Users")
@@ -706,7 +717,7 @@ func createNewPermission(
 					Groups: groups,
 				},
 				Targets: map[string]ArtifactoryPermissionDetailsTarget{
-					repo.Name: {
+					repoName: {
 						IncludePatterns: []string{"**"},
 						ExcludePatterns: []string{},
 					},
@@ -751,6 +762,11 @@ func createNewPermission(
 	stats.CreatedPermissionCount++
 
 	allpermissiondetails = append(allpermissiondetails, artifactorypermissiontarget)
+
+	err = setRepoProperties(client, baseurl, token, repo, propertiesConfig, dryRun)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
