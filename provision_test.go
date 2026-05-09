@@ -278,6 +278,8 @@ func TestProvisionLdap(t *testing.T) {
 		`{"ok":true}`,
 		`{"ok":true}`}
 
+	var unexpectedHttpRequest bool
+
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
 		var bodyStr string
 		if req.Body != nil {
@@ -316,7 +318,7 @@ func TestProvisionLdap(t *testing.T) {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}, nil
 		}
 
-		fmt.Printf("FAIL1\n")
+		unexpectedHttpRequest = true
 
 		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})
@@ -362,6 +364,8 @@ func TestProvisionLdap(t *testing.T) {
 		},
 	}
 
+	var unexpectedLdapQuery bool
+
 	origQueryCreateUser := queryldapCreateUserFn
 	defer func() { queryldapCreateUserFn = origQueryCreateUser }()
 
@@ -388,7 +392,7 @@ func TestProvisionLdap(t *testing.T) {
 			return []*ldap.Entry{}, nil
 		}
 
-		fmt.Printf("FAIL2\n")
+		unexpectedLdapQuery = true
 
 		return []*ldap.Entry{}, nil
 	}
@@ -398,6 +402,14 @@ func TestProvisionLdap(t *testing.T) {
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
+	}
+
+	if unexpectedHttpRequest {
+		t.Errorf("ProvisionLdap: unexpected http request received")
+	}
+
+	if unexpectedLdapQuery {
+		t.Errorf("ProvisionLdap: unexpected ldap query received")
 	}
 }
 
@@ -451,6 +463,8 @@ func TestProvisionLdapFail(t *testing.T) {
 		`{"ok":true}`,
 		`{"ok":true}`}
 
+	var unexpectedHttpRequest bool
+
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
 		var bodyStr string
 		if req.Body != nil {
@@ -489,7 +503,7 @@ func TestProvisionLdapFail(t *testing.T) {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}, nil
 		}
 
-		fmt.Printf("FAIL3\n")
+		unexpectedHttpRequest = true
 
 		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})
@@ -554,7 +568,11 @@ func TestProvisionLdapFail(t *testing.T) {
 
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
-		t.Errorf("ProvisionLdap: unexpected error = %v", err)
+		t.Errorf("ProvisionLdapFail: unexpected error = %v", err)
+	}
+
+	if unexpectedHttpRequest {
+		t.Errorf("ProvisionLdapFail: unexpected http request received")
 	}
 }
 
