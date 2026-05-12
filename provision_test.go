@@ -596,6 +596,7 @@ func TestSetRepoProperties(t *testing.T) {
 
 	var capturedUrl string
 	var capturedMethod string
+	var requestCount int
 
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
 		capturedUrl = req.URL.String()
@@ -606,6 +607,16 @@ func TestSetRepoProperties(t *testing.T) {
 			t.Errorf("SetRepoProperties: expected Authorization header 'Bearer test-token', got '%s'", authHeader)
 		}
 
+		if req.Method == "GET" {
+			requestCount++
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader(`{"properties":{}}`)),
+				Header:     make(http.Header),
+			}, nil
+		}
+
+		requestCount++
 		return &http.Response{
 			StatusCode: 204,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -619,7 +630,7 @@ func TestSetRepoProperties(t *testing.T) {
 	}
 
 	if capturedMethod != "PUT" {
-		t.Errorf("SetRepoProperties: expected method PUT, got %s", capturedMethod)
+		t.Errorf("SetRepoProperties: expected last method PUT, got %s", capturedMethod)
 	}
 
 	if !strings.Contains(capturedUrl, "https://artifactory.example.com/artifactory/api/storage/test-repo?properties=") {
@@ -648,10 +659,19 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 		Url:           "abc123",
 	}
 
-	var httpCalled bool
+	var requestCount int
 
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
-		httpCalled = true
+		requestCount++
+
+		if req.Method == "GET" {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			}, nil
+		}
+
 		return &http.Response{
 			StatusCode: 204,
 			Body:       io.NopCloser(strings.NewReader("")),
@@ -664,7 +684,135 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 		t.Errorf("SetRepoPropertiesEmpty: unexpected error = %v", err)
 	}
 
-	if !httpCalled {
+	if requestCount == 0 {
 		t.Errorf("SetRepoPropertiesEmpty: http call should be made when url property exists")
+	}
+}
+
+// Test setRepoProperties deletes unused properties
+func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
+	repo := Repo{
+		Name:        "test-repo",
+		Description: "Test repository",
+		Rclass:      "local",
+		PackageType: "docker",
+		ExtraFields: map[string]any{
+			"owner": "admin",
+		},
+	}
+
+	propertiesConfig := PropertiesConfig{
+		SetProperties: true,
+		Prefix:        "mycorp",
+		Url:           "https://example.com/docs",
+	}
+
+	var requests []string
+
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		requests = append(requests, fmt.Sprintf("%s %s", req.Method, req.URL.String()))
+
+		if req.Method == "GET" {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader(`{"properties":{"mycorp.oldprop":["oldvalue"],"mycorp.owner":["admin"],"other.key":["value"]}}`)),
+				Header:     make(http.Header),
+			}, nil
+		}
+
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	if err != nil {
+		t.Errorf("SetRepoPropertiesDeleteUnused: unexpected error = %v", err)
+	}
+
+	var deleteCalled bool
+	var deleteUrl string
+	for _, req := range requests {
+		if strings.HasPrefix(req, "DELETE") {
+			deleteCalled = true
+			deleteUrl = req
+			break
+		}
+	}
+
+	if !deleteCalled {
+		t.Errorf("SetRepoPropertiesDeleteUnused: expected DELETE request for unused properties")
+	}
+
+	if !strings.Contains(deleteUrl, "mycorp.oldprop") {
+		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE should include mycorp.oldprop, got %s", deleteUrl)
+	}
+
+	if strings.Contains(deleteUrl, "other.key") {
+		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE should NOT include other.key (different prefix), got %s", deleteUrl)
+	}
+}
+
+// Test setRepoProperties only updates when needed
+func TestSetRepoPropertiesNoUpdate(t *testing.T) {
+	repo := Repo{
+		Name:        "test-repo",
+		Description: "Test repository",
+		Rclass:      "local",
+		PackageType: "docker",
+		ExtraFields: map[string]any{
+			"owner": "admin",
+		},
+	}
+
+	propertiesConfig := PropertiesConfig{
+		SetProperties: true,
+		Prefix:        "mycorp",
+		Url:           "https://example.com/docs",
+	}
+
+	var requests []string
+
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		requests = append(requests, fmt.Sprintf("%s %s", req.Method, req.URL.String()))
+
+		if req.Method == "GET" {
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader(`{"properties":{"mycorp.url":["https://example.com/docs"],"mycorp.owner":["admin"]}}`)),
+				Header:     make(http.Header),
+			}, nil
+		}
+
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	if err != nil {
+		t.Errorf("SetRepoPropertiesNoUpdate: unexpected error = %v", err)
+	}
+
+	var putCalled, deleteCalled bool
+	for _, req := range requests {
+		if strings.HasPrefix(req, "PUT") {
+			putCalled = true
+		}
+		if strings.HasPrefix(req, "DELETE") {
+			deleteCalled = true
+		}
+	}
+
+	if putCalled {
+		t.Errorf("SetRepoPropertiesNoUpdate: should not call PUT when properties match")
+	}
+
+	if deleteCalled {
+		t.Errorf("SetRepoPropertiesNoUpdate: should not call DELETE when no unused properties exist")
 	}
 }
