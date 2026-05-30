@@ -55,6 +55,7 @@ func Generate(
 			Layout:         repo.RepoLayoutRef,
 			Url:            repo.Url,
 			PermissionName: permissionName,
+			Repositories:   repo.Repositories,
 		}
 
 		if allowRenamedPermissions {

@@ -38,6 +38,11 @@ type repoDiff struct {
 	permGroups         map[string][]string
 }
 
+// for testing, to be able to check output in a controlled manner
+func ClearStats() {
+	stats = Statistics{}
+}
+
 func Provision(
 	client *http.Client,
 	baseurl string,
@@ -329,6 +334,9 @@ func hasRepoDiff(repo Repo, allrepos []ArtifactoryRepoDetailsResponse) (bool, *A
 		if repo.Rclass == "remote" && existingRepo.Url != repo.Url {
 			diff = true
 		}
+		if repo.Rclass == "virtual" && repo.Repositories != nil && slices.Compare(existingRepo.Repositories, repo.Repositories) != 0 {
+			diff = true
+		}
 		if ignore {
 			return false, nil
 		}
@@ -409,6 +417,9 @@ func updateExistingRepo(
 	if repo.Rclass == "remote" {
 		artifactoryrepo.Url = repo.Url
 	}
+	if repo.Rclass == "virtual" && repo.Repositories != nil {
+		artifactoryrepo.Repositories = repo.Repositories
+	}
 
 	json, err := json.Marshal(artifactoryrepo)
 	if err != nil {
@@ -464,6 +475,9 @@ func createNewRepo(
 	}
 	if repo.Rclass == "remote" {
 		artifactoryrepo.Url = repo.Url
+	}
+	if repo.Rclass == "virtual" && repo.Repositories != nil {
+		artifactoryrepo.Repositories = repo.Repositories
 	}
 
 	json, err := json.Marshal(artifactoryrepo)

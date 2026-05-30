@@ -8,21 +8,23 @@ type ArtifactoryRepoResponse struct {
 }
 
 type ArtifactoryRepoDetailsResponse struct {
-	Key           string `json:"key"`
-	Description   string `json:"description"`
-	Rclass        string `json:"rclass"`
-	PackageType   string `json:"packageType"`
-	RepoLayoutRef string `json:"repoLayoutRef"`
-	Url           string `json:"url,omitempty"`
+	Key           string   `json:"key"`
+	Description   string   `json:"description"`
+	Rclass        string   `json:"rclass"`
+	PackageType   string   `json:"packageType"`
+	RepoLayoutRef string   `json:"repoLayoutRef"`
+	Url           string   `json:"url,omitempty"`
+	Repositories  []string `json:"repositories,omitempty"`
 }
 
 type ArtifactoryRepoRequest struct {
-	Key           string `json:"key,omitempty"`
-	Description   string `json:"description,omitempty"`
-	Rclass        string `json:"rclass"`
-	PackageType   string `json:"packageType,omitempty"`
-	RepoLayoutRef string `json:"repoLayoutRef,omitempty"`
-	Url           string `json:"url,omitempty"`
+	Key           string   `json:"key,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	Rclass        string   `json:"rclass"`
+	PackageType   string   `json:"packageType,omitempty"`
+	RepoLayoutRef string   `json:"repoLayoutRef,omitempty"`
+	Url           string   `json:"url,omitempty"`
+	Repositories  []string `json:"repositories,omitempty"`
 }
 
 type ArtifactoryPermissions struct {
@@ -98,6 +100,7 @@ type Repo struct {
 	Delete         []string       `json:"delete,omitempty"`
 	Manage         []string       `json:"manage,omitempty"`
 	Scan           []string       `json:"scan,omitempty"`
+	Repositories   []string       `json:"repositories,omitempty"`
 	SourceFile     string         `json:"-"`
 	SourceOffset   int            `json:"-"`
 	SourceLine     int            `json:"-"`

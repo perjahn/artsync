@@ -431,3 +431,66 @@ func TestAddPermissionsToRepo(t *testing.T) {
 		t.Errorf("addPermissionsToRepo (1/1): failed to not add any user to SCAN: (%d) '%s'", len(repo.Scan), strings.Join(repo.Scan, "', '"))
 	}
 }
+
+func TestGenerateVirtualWithRepositories(t *testing.T) {
+	tests := []struct {
+		repos             []ArtifactoryRepoDetailsResponse
+		permissiondetails []ArtifactoryPermissionDetails
+		filename          string
+		wantErr           bool
+		yamlOutput        string
+	}{
+		{
+			[]ArtifactoryRepoDetailsResponse{},
+			[]ArtifactoryPermissionDetails{},
+			"/tmp/invalid/path/testfile.yaml",
+			true,
+			""},
+		{
+			[]ArtifactoryRepoDetailsResponse{
+				{
+					Key:           "test-repo1",
+					Description:   "Test repository 1",
+					Rclass:        "virtual",
+					PackageType:   "maven",
+					RepoLayoutRef: "maven-2-default",
+					Repositories:  []string{"repo1", "repo2"},
+				},
+			},
+			[]ArtifactoryPermissionDetails{},
+			"/tmp/testfile1.yaml",
+			false,
+			`- name: test-repo1
+  description: Test repository 1
+  rclass: virtual
+  packageType: maven
+  layout: maven-2-default
+  repositories:
+  - repo1
+  - repo2
+`},
+	}
+	for i, tc := range tests {
+		err := Generate(tc.repos, tc.permissiondetails, false, false, false, false, true, false, tc.filename, false)
+		if err != nil {
+			if !tc.wantErr {
+				t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
+					i+1, len(tests), err, tc.wantErr)
+			}
+		} else if tc.wantErr {
+			t.Errorf("Generate (%d/%d): error = %v, wantErr %v",
+				i+1, len(tests), err, tc.wantErr)
+		} else {
+			data, err := os.ReadFile(tc.filename)
+			if err != nil {
+				t.Errorf("Generate (%d/%d): failed to read file %s: %v",
+					i+1, len(tests), tc.filename, err)
+				continue
+			}
+			if string(data) != tc.yamlOutput {
+				t.Errorf("Generate (%d/%d): output mismatch:\nGot:\n%s\nWant:\n%s",
+					i+1, len(tests), string(data), tc.yamlOutput)
+			}
+		}
+	}
+}
