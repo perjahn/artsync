@@ -64,7 +64,7 @@ func extractExtraFields(rawData map[string]any) map[string]any {
 		"name": true, "names": true, "description": true, "rclass": true,
 		"packageType": true, "layout": true, "url": true, "permissionName": true,
 		"read": true, "annotate": true, "write": true, "delete": true,
-		"manage": true, "scan": true,
+		"manage": true, "scan": true, "repositories": true,
 	}
 
 	extraFields := make(map[string]any)

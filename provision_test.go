@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -109,15 +111,15 @@ func TestProvisionPermissions(t *testing.T) {
 
 	var callCount int
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
-		var reponse *http.Response
+		var response *http.Response
 		if callCount == 0 {
-			reponse = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
 		} else {
-			reponse = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}
 		}
 
 		callCount++
-		return reponse, nil
+		return response, nil
 	})
 
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
@@ -195,15 +197,15 @@ func TestProvisionRenamedPermissions(t *testing.T) {
 
 	var callCount int
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
-		var reponse *http.Response
+		var response *http.Response
 		if callCount == 0 {
-			reponse = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
 		} else {
-			reponse = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponsePermission)), Header: make(http.Header)}
 		}
 
 		callCount++
-		return reponse, nil
+		return response, nil
 	})
 
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
@@ -814,5 +816,246 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 
 	if deleteCalled {
 		t.Errorf("SetRepoPropertiesNoUpdate: should not call DELETE when no unused properties exist")
+	}
+}
+
+func TestProvisionCreateVirtualRepo(t *testing.T) {
+	// capture fmt.Println to assert
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	tc := testcase{
+		[]Repo{
+			{
+				Name:         "test-repo",
+				Description:  "Test repository",
+				Rclass:       "virtual",
+				PackageType:  "docker",
+				Layout:       "",
+				Repositories: []string{"test1", "test2"},
+			},
+		},
+		[]ArtifactoryRepoDetailsResponse{},
+		[]ArtifactoryUser{},
+		[]ArtifactoryGroup{},
+		[]ArtifactoryPermissionDetails{},
+		false,
+		false,
+		"",
+		"",
+		`{"ok":true}`,
+		`{"ok":true}`}
+
+	var callCount int
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		var response *http.Response
+		if callCount == 0 {
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
+		} else {
+			t.Error("ProvisionCreateVirtualRepo: Unexpected second call for permissions targets when handling virtual repo")
+		}
+		callCount++
+
+		body, _ := io.ReadAll(req.Body)
+		if !strings.Contains(string(body), `"repositories":["test1","test2"]`) {
+			t.Error("ProvisionCreateVirtualRepo: Repositories to add not passed to API")
+		}
+		return response, nil
+	})
+
+	ClearStats()
+	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	if err != nil {
+		t.Errorf("ProvisionCreateVirtualRepo: error = %v", err)
+	}
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read captured output
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+
+	output := buf.String()
+	if !strings.Contains(output, "Created repos: 1") {
+		t.Error("ProvisionCreateVirtualRepo: Expected one repo to be created. \"Created repos: 1\" not found in fmt.print")
+	}
+}
+
+func TestProvisionUpdateVirtualRepo(t *testing.T) {
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	tc := testcase{
+		[]Repo{
+			{
+				Name:         "test-repo",
+				Description:  "Test repository",
+				Rclass:       "virtual",
+				PackageType:  "docker",
+				Layout:       "",
+				Repositories: []string{"test1", "test2"},
+			},
+		},
+		[]ArtifactoryRepoDetailsResponse{
+			{
+				Key:           "test-repo",
+				Description:   "Test repository",
+				Rclass:        "virtual",
+				PackageType:   "docker",
+				RepoLayoutRef: "simple-default",
+			},
+		},
+		[]ArtifactoryUser{},
+		[]ArtifactoryGroup{},
+		[]ArtifactoryPermissionDetails{},
+		false,
+		false,
+		"",
+		"",
+		`{"ok":true}`,
+		`{"ok":true}`}
+
+	var callCount int
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		var response *http.Response
+		if callCount == 0 {
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
+		} else {
+			t.Error("ProvisionUpdateVirtualRepo: Unexpected second call for permissions targets when handling virtual repo")
+		}
+		callCount++
+
+		body, _ := io.ReadAll(req.Body)
+		if !strings.Contains(string(body), "\"repositories\":[\"test1\",\"test2\"]") {
+			t.Error("ProvisionUpdateVirtualRepo: Repositories to add not passed to API")
+		}
+		return response, nil
+	})
+
+	ClearStats()
+	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	if err != nil {
+		t.Errorf("ProvisionUpdateVirtualRepo: error = %v", err)
+	}
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read captured output
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+
+	output := buf.String()
+
+	fmt.Println("###")
+	fmt.Println(tc.reposToProvision)
+	fmt.Println(output)
+	fmt.Println("###")
+
+	if !strings.Contains(output, "Updated repos: 1") {
+		t.Error("ProvisionUpdateVirtualRepo: Expected one repo to be updated. \"Updated repos: 1\" not found in fmt.print")
+	}
+}
+
+func TestProvisionVirtualRepoMissingRepoList(t *testing.T) {
+	tc := testcase{
+		reposToProvision: []Repo{
+			{
+				Name:        "test-repo",
+				Description: "Test repository",
+				Rclass:      "virtual",
+				PackageType: "docker",
+				Layout:      "",
+			},
+		},
+		repos: []ArtifactoryRepoDetailsResponse{
+			{
+				Key:           "test-repo",
+				Description:   "Test repository",
+				Rclass:        "virtual",
+				PackageType:   "docker",
+				RepoLayoutRef: "simple-default",
+				Repositories:  []string{"test1", "test2"},
+			},
+		},
+		users:             []ArtifactoryUser{},
+		groups:            []ArtifactoryGroup{},
+		permissiondetails: []ArtifactoryPermissionDetails{},
+		allowPatterns:     false,
+		dryRun:            false}
+
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		t.Error("ProvisionVirtualRepoMissingRepoList: Unexpected call to API when nothing was changed.")
+		return nil, nil
+	})
+
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	if err != nil {
+		t.Errorf("ProvisionVirtualRepoMissingRepoList: error = %v", err)
+	}
+}
+
+func TestProvisionVirtualRepoMissingRepoListTriggerChange(t *testing.T) {
+	tc := testcase{
+		[]Repo{
+			{
+				Name:        "test-repo",
+				Description: "Test repository",
+				Rclass:      "virtual",
+				PackageType: "docker",
+				Layout:      "",
+			},
+		},
+		[]ArtifactoryRepoDetailsResponse{
+			{
+				Key:           "test-repo",
+				Description:   "Test repository - new", // trigger change
+				Rclass:        "virtual",
+				PackageType:   "docker",
+				RepoLayoutRef: "simple-default",
+				Repositories:  []string{"test1", "test2"},
+			},
+		},
+		[]ArtifactoryUser{},
+		[]ArtifactoryGroup{},
+		[]ArtifactoryPermissionDetails{},
+		false,
+		false,
+		"",
+		"",
+		`{"ok":true}`,
+		`{"ok":true}`}
+
+	var callCount int
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		var response *http.Response
+		if callCount == 0 {
+			response = &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.HTTPResponseRepo)), Header: make(http.Header)}
+		} else {
+			t.Error("ProvisionVirtualRepoMissingRepoListTriggerChange: Unexpected second call for permissions targets when handling virtual repo")
+		}
+		callCount++
+
+		body, _ := io.ReadAll(req.Body)
+		if strings.Contains(string(body), "\"repositories\":") {
+			t.Error("ProvisionVirtualRepoMissingRepoListTriggerChange: List of repositories should not be passed when empty")
+		}
+		return response, nil
+	})
+
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	if err != nil {
+		t.Errorf("ProvisionVirtualRepoMissingRepoListTriggerChange: error = %v", err)
 	}
 }

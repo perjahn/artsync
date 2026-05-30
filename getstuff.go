@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 )
 
+var pagenumRepos int
+var pagenumPermissions int
+
 func GetStuff(
 	client *http.Client,
 	baseurl string,
@@ -392,7 +395,8 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 			fmt.Printf("Response body: '%s'\n", body)
 		}
 
-		outfile := fmt.Sprintf("%s/allrepodetails_last_page.json", cachefolder)
+		outfile := fmt.Sprintf("%s/allrepodetails_page_%04d.json", cachefolder, pagenumRepos)
+		pagenumRepos++
 		err = os.WriteFile(outfile, []byte(body), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("error saving response body: %w", err)
@@ -567,7 +571,8 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 			fmt.Printf("Response body: '%s'\n", body)
 		}
 
-		outfile := fmt.Sprintf("%s/allpermissiondetails_last_page.json", cachefolder)
+		outfile := fmt.Sprintf("%s/allpermissiondetails_page_%04d.json", cachefolder, pagenumPermissions)
+		pagenumPermissions++
 		err = os.WriteFile(outfile, []byte(body), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("error saving response body: %w", err)
