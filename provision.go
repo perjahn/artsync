@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -555,10 +556,10 @@ func setRepoProperties(
 		repoName = repo.Name + "-cache"
 	}
 
-	desiredProps := make(map[string]string)
+	desiredProps := make(map[string][]string)
 
 	if propertiesConfig.Url != "" {
-		desiredProps[fmt.Sprintf("%s.url", propertiesConfig.Prefix)] = propertiesConfig.Url
+		desiredProps[fmt.Sprintf("%s.url", propertiesConfig.Prefix)] = []string{propertiesConfig.Url}
 	}
 
 	for key, value := range repo.ExtraFields {
@@ -566,19 +567,17 @@ func setRepoProperties(
 			continue
 		}
 
-		var valueStr string
+		var values []string
 		switch v := value.(type) {
 		case []any:
-			var items []string
 			for _, item := range v {
-				items = append(items, fmt.Sprintf("%v", item))
+				values = append(values, fmt.Sprintf("%v", item))
 			}
-			valueStr = strings.Join(items, ",")
 		default:
-			valueStr = fmt.Sprintf("%v", value)
+			values = []string{fmt.Sprintf("%v", value)}
 		}
 
-		desiredProps[fmt.Sprintf("%s.%s", propertiesConfig.Prefix, key)] = valueStr
+		desiredProps[fmt.Sprintf("%s.%s", propertiesConfig.Prefix, key)] = values
 	}
 
 	if len(desiredProps) == 0 {
@@ -595,7 +594,7 @@ func setRepoProperties(
 		needsUpdate = true
 	} else {
 		for key, desiredVal := range desiredProps {
-			if currentVal, ok := currentProps[key]; !ok || currentVal != desiredVal {
+			if currentVal, ok := currentProps[key]; !ok || !equalStringSlices(currentVal, desiredVal) {
 				needsUpdate = true
 				break
 			}
@@ -605,7 +604,7 @@ func setRepoProperties(
 	if needsUpdate {
 		var properties []string
 		for key, value := range desiredProps {
-			properties = append(properties, fmt.Sprintf("%s=%s", key, value))
+			properties = append(properties, fmt.Sprintf("%s=%s", url.QueryEscape(key), url.QueryEscape(fmt.Sprint(value))))
 		}
 
 		url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties=%s&recursive=0", baseurl, repoName, strings.Join(properties, ";"))
@@ -674,7 +673,7 @@ func getRepoProperties(
 	baseurl string,
 	token string,
 	repoName string,
-) (map[string]string, error) {
+) (map[string][]string, error) {
 	url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties", baseurl, repoName)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -695,29 +694,29 @@ func getRepoProperties(
 	}
 
 	if resp.StatusCode == 404 {
-		return make(map[string]string), nil
+		return make(map[string][]string), nil
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := strings.TrimSpace(string(body))
 
 	if bodyStr == "" {
-		return make(map[string]string), nil
+		return make(map[string][]string), nil
 	}
 
 	var propsResponse ArtifactoryPropertiesResponse
 	err = json.Unmarshal(body, &propsResponse)
 	if err == nil && propsResponse.Properties != nil {
-		props := make(map[string]string)
+		props := make(map[string][]string)
 		for key, values := range propsResponse.Properties {
 			if len(values) > 0 {
-				props[key] = strings.Join(values, ";")
+				props[key] = values
 			}
 		}
 		return props, nil
 	}
 
-	return make(map[string]string), nil
+	return make(map[string][]string), nil
 }
 
 type PermissionDiffInfo struct {

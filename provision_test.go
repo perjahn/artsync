@@ -586,7 +586,8 @@ func TestSetRepoProperties(t *testing.T) {
 		Rclass:      "local",
 		PackageType: "docker",
 		ExtraFields: map[string]any{
-			"owner": "admin",
+			"owner":   "admin",
+			"version": "1.0;2.0",
 		},
 	}
 
@@ -639,12 +640,16 @@ func TestSetRepoProperties(t *testing.T) {
 		t.Errorf("SetRepoProperties: url format incorrect: %s", capturedUrl)
 	}
 
-	if !strings.Contains(capturedUrl, "mycorp.url=https://example.com/docs") {
+	if !strings.Contains(capturedUrl, "mycorp.url=%5Bhttps%3A%2F%2Fexample.com%2Fdocs%5D") {
 		t.Errorf("SetRepoProperties: missing url property in %s", capturedUrl)
 	}
 
-	if !strings.Contains(capturedUrl, "mycorp.owner=admin") {
+	if !strings.Contains(capturedUrl, "mycorp.owner=%5Badmin%5D") {
 		t.Errorf("SetRepoProperties: missing owner property in %s", capturedUrl)
+	}
+
+	if !strings.Contains(capturedUrl, "mycorp.version=%5B1.0%3B2.0%5D") {
+		t.Errorf("SetRepoProperties: missing version property with escaped semicolon in %s", capturedUrl)
 	}
 }
 
