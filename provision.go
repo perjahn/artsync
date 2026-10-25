@@ -392,12 +392,12 @@ func hasPropertiesDiff(repo Repo, allproperties []repoProperties, propertiesConf
 	}
 
 	desiredProperties := desiredRepoProperties(repo, propertiesConfig.Prefix)
-	prefix := propertiesConfig.Prefix + "."
-	return propertyMapsDiffer(desiredProperties, existingProperties.Properties, prefix), existingProperties
+	return propertyMapsDiffer(desiredProperties, existingProperties.Properties, propertiesConfig.Prefix), existingProperties
 }
 
 func desiredRepoProperties(repo Repo, prefix string) map[string][]string {
 	desiredProperties := make(map[string][]string)
+
 	for key, value := range repo.ExtraFields {
 		if len(value) == 0 {
 			continue
@@ -406,45 +406,51 @@ func desiredRepoProperties(repo Repo, prefix string) map[string][]string {
 		for _, item := range value {
 			normalizedValues = append(normalizedValues, strings.Split(item, ";")...)
 		}
-		desiredProperties[fmt.Sprintf("%s.%s", prefix, key)] = normalizedValues
+		desiredProperties[prefix+key] = normalizedValues
 	}
 	return desiredProperties
 }
 
 func propertyMapsDiffer(desiredProperties, existingProperties map[string][]string, prefix string) bool {
 	for key, desiredValue := range desiredProperties {
-		if existingValue, ok := existingProperties[key]; !ok || !slices.Equal(existingValue, desiredValue) {
+		if existingValue, ok := existingProperties[key]; !ok || !equalStringSlices(existingValue, desiredValue) {
 			return true
 		}
 	}
 
-	for key := range existingProperties {
-		if strings.HasPrefix(key, prefix) {
-			if _, ok := desiredProperties[key]; !ok {
-				return true
+	if prefix != "" {
+		for key := range existingProperties {
+			if strings.HasPrefix(key, prefix) {
+				if _, ok := desiredProperties[key]; !ok {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
-func repoPropertiesDiff(existingProperties, desiredProperties map[string][]string, prefix string) (string, error) {
+func printRepoPropertiesDiff(existingProperties, desiredProperties map[string][]string, prefix string) (string, error) {
 	ownedProperties := make(map[string][]string)
 	for key, value := range existingProperties {
-		if strings.HasPrefix(key, prefix) {
+		if prefix == "" {
+			if _, isDesiredProperty := desiredProperties[key]; isDesiredProperty {
+				ownedProperties[key] = value
+			}
+		} else if strings.HasPrefix(key, prefix) {
 			ownedProperties[key] = value
 		}
 	}
 
-	oldJSON, err := json.Marshal(ownedProperties)
+	oldJson, err := json.Marshal(ownedProperties)
 	if err != nil {
 		return "", fmt.Errorf("error encoding existing repo properties: %w", err)
 	}
-	newJSON, err := json.Marshal(desiredProperties)
+	newJson, err := json.Marshal(desiredProperties)
 	if err != nil {
 		return "", fmt.Errorf("error encoding desired repo properties: %w", err)
 	}
-	return PrintDiff(string(oldJSON), string(newJSON), false)
+	return PrintDiff(string(oldJson), string(newJson), false)
 }
 
 func provisionRepo(
@@ -655,11 +661,11 @@ func setRepoProperties(
 	}
 
 	desiredProps := desiredRepoProperties(repo, propertiesConfig.Prefix)
-	prefix := propertiesConfig.Prefix + "."
+	prefix := propertiesConfig.Prefix
 	needsUpdate := propertyMapsDiffer(desiredProps, existingProperties, prefix)
 
 	if needsUpdate {
-		diffText, err := repoPropertiesDiff(existingProperties, desiredProps, prefix)
+		diffText, err := printRepoPropertiesDiff(existingProperties, desiredProps, prefix)
 		if err != nil {
 			return fmt.Errorf("error generating repo properties diff: %w", err)
 		}
@@ -723,10 +729,12 @@ func setRepoProperties(
 	}
 
 	var unused []string
-	for key := range existingProperties {
-		if strings.HasPrefix(key, prefix) {
-			if _, ok := desiredProps[key]; !ok {
-				unused = append(unused, key)
+	if prefix != "" {
+		for key := range existingProperties {
+			if strings.HasPrefix(key, prefix) {
+				if _, ok := desiredProps[key]; !ok {
+					unused = append(unused, key)
+				}
 			}
 		}
 	}

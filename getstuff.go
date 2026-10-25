@@ -660,16 +660,8 @@ func getRootFolderProperties(client *http.Client, baseurl string, token string, 
 			Properties: map[string][]string{},
 		}
 
-		if hasPropertyArraysEncodedAsDuplicatedKeys(folder.Properties) {
-			props, err := getRepoPropertiesArraysInCorrectOrder(client, baseurl, token, folder.Repo)
-			if err != nil {
-				return nil, err
-			}
-			repoProps.Properties = props
-		} else {
-			for _, property := range folder.Properties {
-				repoProps.Properties[property.Key] = []string{property.Value}
-			}
+		for _, property := range folder.Properties {
+			repoProps.Properties[property.Key] = append(repoProps.Properties[property.Key], property.Value)
 		}
 
 		allproperties = append(allproperties, repoProps)
@@ -684,49 +676,6 @@ func getRootFolderProperties(client *http.Client, baseurl string, token string, 
 	}
 
 	return allproperties, nil
-}
-
-func hasPropertyArraysEncodedAsDuplicatedKeys(aqlProperty []aqlProperty) bool {
-	propertyKeys := make(map[string]bool)
-	for _, property := range aqlProperty {
-		if _, exists := propertyKeys[property.Key]; exists {
-			return true
-		}
-		propertyKeys[property.Key] = true
-	}
-	return false
-}
-
-func getRepoPropertiesArraysInCorrectOrder(client *http.Client, baseurl string, token string, repoName string) (map[string][]string, error) {
-	url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties", baseurl, repoName)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error getting repo properties, request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error getting repo properties: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error getting repo properties, reading body: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("error getting repo properties, unexpected status: %s, body: %s", resp.Status, body)
-	}
-
-	var propsResponse ArtifactoryPropertiesResponse
-	if err = json.Unmarshal(body, &propsResponse); err != nil {
-		return nil, fmt.Errorf("error getting repo properties, decode: %w", err)
-	}
-
-	return propsResponse.Properties, nil
 }
 
 func getLDAPSettings(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryLDAPSettings, error) {

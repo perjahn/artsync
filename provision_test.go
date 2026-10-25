@@ -584,6 +584,33 @@ func TestProvisionLdapFail(t *testing.T) {
 	}
 }
 
+func TestGetRootFolderPropertiesUsesAQLForArrayValues(t *testing.T) {
+	var requestCount int
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		if req.URL.Path != "/artifactory/api/search/aql" {
+			t.Errorf("unexpected request path: %s", req.URL.Path)
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"results":[{"repo":"test-repo","properties":[{"key":"mycorp.owners","value":"release"},{"key":"mycorp.owners","value":"admin"}]}]}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	properties, err := getRootFolderProperties(client, "https://artifactory.example.com", "test-token", t.TempDir(), false)
+	if err != nil {
+		t.Fatalf("getRootFolderProperties() error = %v", err)
+	}
+	if requestCount != 1 {
+		t.Fatalf("request count = %d, want 1", requestCount)
+	}
+	if len(properties) != 1 || !equalStringSlices(properties[0].Properties["mycorp.owners"], []string{"release", "admin"}) {
+		t.Fatalf("property values = %v, want both AQL values", properties)
+	}
+}
+
 // Test setRepoProperties function
 func TestSetRepoProperties(t *testing.T) {
 	ClearStats()
@@ -602,7 +629,7 @@ func TestSetRepoProperties(t *testing.T) {
 
 	propertiesConfig := PropertiesConfig{
 		SetProperties: true,
-		Prefix:        "mycorp",
+		Prefix:        "mycorp.",
 		Url:           "https://example.com/docs",
 	}
 	repo = addUrlToRepoProperties(repo, propertiesConfig)
@@ -685,6 +712,85 @@ func TestSetRepoProperties(t *testing.T) {
 	}
 }
 
+func TestPropertyMapsDifferIgnoresValueOrder(t *testing.T) {
+	desiredProperties := map[string][]string{
+		"mycorp.labels": {"first", "second"},
+	}
+	existingProperties := map[string][]string{
+		"mycorp.labels": {"second", "first"},
+	}
+
+	if propertyMapsDiffer(desiredProperties, existingProperties, "mycorp.") {
+		t.Fatal("property maps should not differ when values are reordered")
+	}
+}
+
+func TestEmptyPropertyPrefixUsesRawKeys(t *testing.T) {
+	desiredProperties := desiredRepoProperties(Repo{
+		ExtraFields: map[string][]string{"owner": {"admin"}},
+	}, "")
+	if !slices.Equal(desiredProperties["owner"], []string{"admin"}) {
+		t.Fatalf("desired properties = %v, want raw owner key", desiredProperties)
+	}
+	if _, ok := desiredProperties[".owner"]; ok {
+		t.Fatalf("desired properties unexpectedly include dotted key: %v", desiredProperties)
+	}
+	if propertyMapsDiffer(desiredProperties, map[string][]string{
+		"owner":     {"admin"},
+		"unrelated": {"keep"},
+	}, "") {
+		t.Fatal("unrelated properties should not cause a diff without an ownership prefix")
+	}
+	diffText, err := printRepoPropertiesDiff(map[string][]string{
+		"owner":     {"old"},
+		"unrelated": {"keep"},
+	}, map[string][]string{
+		"owner": {"new"},
+	}, "")
+	if err != nil {
+		t.Fatalf("printRepoPropertiesDiff() error = %v", err)
+	}
+	if strings.Contains(diffText, "unrelated") {
+		t.Fatalf("property diff includes unrelated key: %s", diffText)
+	}
+}
+
+func TestSetRepoPropertiesWithoutPrefixDoesNotDeleteUnrelatedProperties(t *testing.T) {
+	var methods []string
+	var properties string
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		methods = append(methods, req.Method)
+		properties = req.URL.Query().Get("properties")
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(
+		client,
+		"https://artifactory.example.com",
+		"test-token",
+		Repo{Name: "test-repo", ExtraFields: map[string][]string{"owner": {"new"}}},
+		map[string][]string{
+			"owner":     {"old"},
+			"unrelated": {"keep"},
+		},
+		PropertiesConfig{SetProperties: true},
+		false,
+	)
+	if err != nil {
+		t.Fatalf("setRepoProperties() error = %v", err)
+	}
+	if !slices.Equal(methods, []string{"PUT"}) {
+		t.Fatalf("HTTP methods = %v, want only PUT", methods)
+	}
+	if properties != "owner=new" {
+		t.Fatalf("properties query = %q, want %q", properties, "owner=new")
+	}
+}
+
 func TestSetRepoPropertiesCountsCreatedAndUpdated(t *testing.T) {
 	ClearStats()
 	repo := Repo{
@@ -695,7 +801,7 @@ func TestSetRepoPropertiesCountsCreatedAndUpdated(t *testing.T) {
 			"same":    {"same-value"},
 		},
 	}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: 204,
@@ -739,7 +845,7 @@ func TestSetRepoPropertiesRemoteRepoUsesCache(t *testing.T) {
 			"owner": {"admin"},
 		},
 	}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 
 	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
 		"mycorp.old": {"value"},
@@ -776,7 +882,7 @@ func TestSetRepoPropertiesVirtualRepoIsSkipped(t *testing.T) {
 			"owner": {"admin"},
 		},
 	}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 
 	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, nil, propertiesConfig, false)
 	if err != nil {
@@ -796,7 +902,7 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 
 	propertiesConfig := PropertiesConfig{
 		SetProperties: true,
-		Prefix:        "mycorp",
+		Prefix:        "mycorp.",
 		Url:           "abc123",
 	}
 	repo = addUrlToRepoProperties(repo, propertiesConfig)
@@ -846,7 +952,7 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 
 	propertiesConfig := PropertiesConfig{
 		SetProperties: true,
-		Prefix:        "mycorp",
+		Prefix:        "mycorp.",
 		Url:           "https://example.com/docs",
 	}
 	repo = addUrlToRepoProperties(repo, propertiesConfig)
@@ -937,7 +1043,7 @@ func TestSetRepoPropertiesRemoteDeleteMissingCache(t *testing.T) {
 		Name:   "remote-repo",
 		Rclass: "remote",
 	}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
 		"mycorp.old": {"value"},
 	}, propertiesConfig, false)
@@ -972,7 +1078,7 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 
 	propertiesConfig := PropertiesConfig{
 		SetProperties: true,
-		Prefix:        "mycorp",
+		Prefix:        "mycorp.",
 		Url:           "https://example.com/docs",
 	}
 	repo = addUrlToRepoProperties(repo, propertiesConfig)
@@ -1026,7 +1132,7 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 }
 
 func TestRepoPropertiesDiff(t *testing.T) {
-	diffText, err := repoPropertiesDiff(
+	diffText, err := printRepoPropertiesDiff(
 		map[string][]string{
 			"mycorp.owner":  {"old"},
 			"mycorp.legacy": {"remove me"},
@@ -1039,7 +1145,7 @@ func TestRepoPropertiesDiff(t *testing.T) {
 		"mycorp.",
 	)
 	if err != nil {
-		t.Fatalf("repoPropertiesDiff() error = %v", err)
+		t.Fatalf("printRepoPropertiesDiff() error = %v", err)
 	}
 
 	var removedOld, addedNew, removedLegacy, addedVersion bool
@@ -1064,7 +1170,7 @@ func TestHasPropertiesDiff(t *testing.T) {
 			"owners": {"admin", "release"},
 		},
 	}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 
 	tests := []struct {
 		name       string
@@ -1083,7 +1189,7 @@ func TestHasPropertiesDiff(t *testing.T) {
 			properties: map[string][]string{
 				"mycorp.owners": {"release", "admin"},
 			},
-			wantDiff: true,
+			wantDiff: false,
 		},
 		{
 			name: "different values",
@@ -1127,7 +1233,7 @@ func TestHasPropertiesDiffRemoteRepoUsesCacheProperties(t *testing.T) {
 			"mycorp.owner": {"admin"},
 		},
 	}}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 
 	gotDiff, existingProperties := hasPropertiesDiff(repo, properties, propertiesConfig)
 	if gotDiff {
@@ -1151,7 +1257,7 @@ func TestHasPropertiesDiffSemicolonSeparatedValues(t *testing.T) {
 			"mycorp.colors": {"red", "blue"},
 		},
 	}}
-	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp."}
 
 	gotDiff, _ := hasPropertiesDiff(repo, properties, propertiesConfig)
 	if gotDiff {
@@ -1163,7 +1269,7 @@ func TestFindReposWithDiffsAddsConfiguredURLProperty(t *testing.T) {
 	repo := Repo{Name: "test-repo"}
 	propertiesConfig := PropertiesConfig{
 		SetProperties: true,
-		Prefix:        "mycorp",
+		Prefix:        "mycorp.",
 		Url:           "https://example.com/docs",
 	}
 
@@ -1210,7 +1316,7 @@ func TestSetRepoPropertiesDeletesAllWhenDesiredIsEmpty(t *testing.T) {
 		"test-token",
 		Repo{Name: "test-repo", ExtraFields: map[string][]string{}},
 		map[string][]string{"mycorp.old": {"value"}},
-		PropertiesConfig{SetProperties: true, Prefix: "mycorp"},
+		PropertiesConfig{SetProperties: true, Prefix: "mycorp."},
 		false,
 	)
 	if err != nil {

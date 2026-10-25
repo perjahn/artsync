@@ -300,7 +300,7 @@ func loadPropertiesConfig(configFile string) (PropertiesConfig, error) {
 	if envPropertiesPrefix != "" && envPropertiesUrl != "" {
 		return PropertiesConfig{
 			SetProperties: true,
-			Prefix:        envPropertiesPrefix,
+			Prefix:        propertyPrefix(envPropertiesPrefix),
 			Url:           envPropertiesUrl,
 		}, nil
 	}
@@ -323,6 +323,8 @@ func loadPropertiesConfig(configFile string) (PropertiesConfig, error) {
 	if envPropertiesPrefix != "" {
 		propertiesConfig.Prefix = envPropertiesPrefix
 	}
+	propertiesConfig.Prefix = propertyPrefix(propertiesConfig.Prefix)
+
 	if envPropertiesUrl != "" {
 		propertiesConfig.Url = envPropertiesUrl
 	}
@@ -330,6 +332,13 @@ func loadPropertiesConfig(configFile string) (PropertiesConfig, error) {
 	propertiesConfig.SetProperties = true
 
 	return propertiesConfig, nil
+}
+
+func propertyPrefix(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	return prefix + "."
 }
 
 func filterLdapSettings(ldapsettings []ArtifactoryLDAPSettings, excludeSettings []string) []ArtifactoryLDAPSettings {

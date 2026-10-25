@@ -188,10 +188,6 @@ type aqlProperty struct {
 	Value string `json:"value"`
 }
 
-type ArtifactoryPropertiesResponse struct {
-	Properties map[string][]string `json:"properties"`
-}
-
 type repoProperties struct {
 	Repo       string
 	Properties map[string][]string
