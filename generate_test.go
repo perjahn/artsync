@@ -58,6 +58,27 @@ func TestGenerate(t *testing.T) {
 		{
 			[]ArtifactoryRepoDetailsResponse{
 				{
+					Key:           "test-remote",
+					Rclass:        "remote",
+					PackageType:   "maven",
+					RepoLayoutRef: "maven-2-default",
+					Url:           "https://example.com/maven",
+					Offline:       true,
+				},
+			},
+			[]ArtifactoryPermissionDetails{},
+			"/tmp/testfile1.yaml",
+			false,
+			`- name: test-remote
+  rclass: remote
+  packageType: maven
+  layout: maven-2-default
+  url: https://example.com/maven
+  offline: true
+`},
+		{
+			[]ArtifactoryRepoDetailsResponse{
+				{
 					Key:           "test-repo1",
 					Description:   "Test repository",
 					Rclass:        "local",

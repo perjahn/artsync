@@ -14,6 +14,7 @@ type ArtifactoryRepoDetailsResponse struct {
 	PackageType   string   `json:"packageType"`
 	RepoLayoutRef string   `json:"repoLayoutRef"`
 	Url           string   `json:"url,omitempty"`
+	Offline       bool     `json:"offline,omitempty"`
 	Repositories  []string `json:"repositories,omitempty"`
 }
 
@@ -24,6 +25,7 @@ type ArtifactoryRepoRequest struct {
 	PackageType   string   `json:"packageType,omitempty"`
 	RepoLayoutRef string   `json:"repoLayoutRef,omitempty"`
 	Url           string   `json:"url,omitempty"`
+	Offline       bool     `json:"offline"`
 	Repositories  []string `json:"repositories,omitempty"`
 }
 
@@ -93,6 +95,7 @@ type Repo struct {
 	PackageType    string              `json:"packageType,omitempty"`
 	Layout         string              `json:"layout,omitempty"`
 	Url            string              `json:"url,omitempty"`
+	Offline        bool                `json:"offline,omitempty"`
 	PermissionName string              `json:"permissionName,omitempty"`
 	Read           []string            `json:"read,omitempty"`
 	Annotate       []string            `json:"annotate,omitempty"`

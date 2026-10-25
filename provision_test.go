@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -1568,5 +1569,72 @@ func TestProvisionVirtualRepoMissingRepoListTriggerChange(t *testing.T) {
 	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionVirtualRepoMissingRepoListTriggerChange: error = %v", err)
+	}
+}
+
+func TestRemoteOfflineDiffAndPayload(t *testing.T) {
+	tests := []struct {
+		name          string
+		desired       bool
+		existing      bool
+		wantDiff      bool
+		create        bool
+		wantPayload   bool
+		wantFieldSent bool
+	}{
+		{name: "enable offline", desired: true, existing: false, wantDiff: true, create: true, wantPayload: true, wantFieldSent: true},
+		{name: "bring online", desired: false, existing: true, wantDiff: true, wantPayload: false, wantFieldSent: true},
+		{name: "default online", desired: false, existing: false, wantPayload: false, wantFieldSent: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := Repo{
+				Name:        "remote-repo",
+				Rclass:      "remote",
+				PackageType: "maven",
+				Layout:      "maven-2-default",
+				Url:         "https://example.com/maven",
+				Offline:     tc.desired,
+			}
+			existingRepo := ArtifactoryRepoDetailsResponse{
+				Key:           repo.Name,
+				Rclass:        repo.Rclass,
+				PackageType:   repo.PackageType,
+				RepoLayoutRef: repo.Layout,
+				Url:           repo.Url,
+				Offline:       tc.existing,
+			}
+
+			gotDiff, _ := hasRepoDiff(repo, []ArtifactoryRepoDetailsResponse{existingRepo})
+			if gotDiff != tc.wantDiff {
+				t.Errorf("hasRepoDiff() = %t, want %t", gotDiff, tc.wantDiff)
+			}
+
+			client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+				var requestBody map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&requestBody); err != nil {
+					t.Fatalf("decode request body: %v", err)
+				}
+				payload, sent := requestBody["offline"].(bool)
+				if sent != tc.wantFieldSent {
+					t.Errorf("offline field sent = %t, want %t", sent, tc.wantFieldSent)
+				}
+				if sent && payload != tc.wantPayload {
+					t.Errorf("offline payload = %t, want %t", payload, tc.wantPayload)
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"ok":true}`)), Header: make(http.Header)}, nil
+			})
+
+			var err error
+			if tc.create {
+				err = createNewRepo(client, "https://artifactory.example.com", "token", repo, false)
+			} else {
+				err = updateExistingRepo(client, "https://artifactory.example.com", "token", repo, existingRepo, false)
+			}
+			if err != nil {
+				t.Errorf("provision remote repo: %v", err)
+			}
+		})
 	}
 }

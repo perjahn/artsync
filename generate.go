@@ -54,6 +54,7 @@ func Generate(
 			PackageType:    repo.PackageType,
 			Layout:         repo.RepoLayoutRef,
 			Url:            repo.Url,
+			Offline:        repo.Offline,
 			PermissionName: permissionName,
 			Repositories:   repo.Repositories,
 		}
@@ -116,6 +117,7 @@ func Generate(
 					reposToSave[i].Description == repoToSave.Description &&
 					reposToSave[i].Rclass == repoToSave.Rclass &&
 					reposToSave[i].Layout == repoToSave.Layout &&
+					reposToSave[i].Offline == repoToSave.Offline &&
 					reposToSave[i].PermissionName == repoToSave.PermissionName &&
 					equalStringSlices(reposToSave[i].Read, repoToSave.Read) &&
 					equalStringSlices(reposToSave[i].Annotate, repoToSave.Annotate) &&

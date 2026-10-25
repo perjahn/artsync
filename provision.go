@@ -353,6 +353,9 @@ func hasRepoDiff(repo Repo, allrepos []ArtifactoryRepoDetailsResponse) (bool, *A
 		if repo.Rclass == "remote" && existingRepo.Url != repo.Url {
 			diff = true
 		}
+		if repo.Rclass == "remote" && existingRepo.Offline != repo.Offline {
+			diff = true
+		}
 		if repo.Rclass == "virtual" && repo.Repositories != nil && slices.Compare(existingRepo.Repositories, repo.Repositories) != 0 {
 			diff = true
 		}
@@ -508,6 +511,9 @@ func updateExistingRepo(
 	if repo.Rclass == "remote" && existingRepo.Url != repo.Url {
 		fmt.Printf("'%s': Url diff: '%s' -> '%s'\n", repo.Name, existingRepo.Url, repo.Url)
 	}
+	if repo.Rclass == "remote" && existingRepo.Offline != repo.Offline {
+		fmt.Printf("'%s': Offline diff: '%t' -> '%t'\n", repo.Name, existingRepo.Offline, repo.Offline)
+	}
 
 	url := fmt.Sprintf("%s/artifactory/api/repositories/%s", baseurl, repo.Name)
 
@@ -520,6 +526,7 @@ func updateExistingRepo(
 	}
 	if repo.Rclass == "remote" {
 		artifactoryrepo.Url = repo.Url
+		artifactoryrepo.Offline = repo.Offline
 	}
 	if repo.Rclass == "virtual" && repo.Repositories != nil {
 		artifactoryrepo.Repositories = repo.Repositories
@@ -579,6 +586,7 @@ func createNewRepo(
 	}
 	if repo.Rclass == "remote" {
 		artifactoryrepo.Url = repo.Url
+		artifactoryrepo.Offline = repo.Offline
 	}
 	if repo.Rclass == "virtual" && repo.Repositories != nil {
 		artifactoryrepo.Repositories = repo.Repositories
@@ -610,6 +618,9 @@ func createNewRepo(
 	}
 	if repo.Rclass == "remote" && repo.Url != "" {
 		fields = append(fields, fmt.Sprintf("Url: '%s'", repo.Url))
+	}
+	if repo.Rclass == "remote" {
+		fields = append(fields, fmt.Sprintf("Offline: '%t'", repo.Offline))
 	}
 	fmt.Printf("'%s': %s\n", repo.Name, strings.Join(fields, ", "))
 
