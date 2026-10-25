@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,40 @@ func TestLoadRepoFile_YAMLSingleObject(t *testing.T) {
 	}
 }
 
+func TestLoadRepoFile_ExtraFieldSemicolonInKey(t *testing.T) {
+	tests := []struct {
+		name    string
+		ext     string
+		content string
+	}{
+		{
+			name:    "json",
+			ext:     "json",
+			content: `{"name":"repo-with-semicolon","semi;colon":"value"}`,
+		},
+		{
+			name:    "yaml",
+			ext:     "yaml",
+			content: "name: repo-with-semicolon\nsemi;colon: value\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeTempFile(t, "repo-semicolon-*."+test.ext, test.content)
+			defer os.Remove(path)
+
+			repos := LoadRepoFiles([]string{path}, false)
+			if len(repos) != 1 {
+				t.Fatalf("expected 1 repo, got %d", len(repos))
+			}
+			if got := repos[0].ExtraFields["semi;colon"]; !slices.Equal(got, []string{"value"}) {
+				t.Fatalf("semicolon field key not preserved: %v", repos[0].ExtraFields)
+			}
+		})
+	}
+}
+
 func TestLoadRepoFile_FilenameFallback(t *testing.T) {
 	content := `rclass: local
 `
@@ -150,7 +185,7 @@ func TestLoadRepoFile_Invalid(t *testing.T) {
 }
 
 func TestLoadRepoFile_JsonWithExtraFields(t *testing.T) {
-	content := `{"name":"repo-with-extra","rclass":"local","customField":"custom value","anotherField":42}`
+	content := `{"name":"repo-with-extra","rclass":"local","customField":"custom value","anotherField":42,"largeInteger":9007199254740993}`
 	path := writeTempFile(t, "repo-extra-*.json", content)
 	defer os.Remove(path)
 
@@ -168,17 +203,23 @@ func TestLoadRepoFile_JsonWithExtraFields(t *testing.T) {
 	if repos[0].ExtraFields == nil {
 		t.Fatalf("extra fields should not be nil")
 	}
-	if repos[0].ExtraFields["customField"] != "custom value" {
+	if len(repos[0].ExtraFields) != 3 {
+		t.Fatalf("expected 3 extra fields, got %v", repos[0].ExtraFields)
+	}
+	if repos[0].ExtraFields["customField"][0] != "custom value" {
 		t.Fatalf("extra field 'customField' not captured correctly: %v", repos[0].ExtraFields["customField"])
 	}
-	if repos[0].ExtraFields["anotherField"] != float64(42) {
-		t.Fatalf("extra field 'anotherField' not captured correctly: %v", repos[0].ExtraFields["anotherField"])
+	if repos[0].ExtraFields["anotherField"][0] != "42" {
+		t.Fatalf("numeric extra field 'anotherField' not converted correctly: %v", repos[0].ExtraFields["anotherField"])
+	}
+	if repos[0].ExtraFields["largeInteger"][0] != "9007199254740993" {
+		t.Fatalf("large integer extra field not preserved: %v", repos[0].ExtraFields["largeInteger"])
 	}
 }
 
 func TestLoadRepoFile_JsonArrayWithExtraFields(t *testing.T) {
 	content := `[
-	  {"name":"repo1","rclass":"local","customField":"value 1","version":1},
+	  {"name":"repo1","rclass":"local","customField":"value 1","version":1,"values":[1,"two",true]},
 	  {"name":"repo2","packageType":"maven","anotherField":"value 2","count":100}
 	]`
 	path := writeTempFile(t, "repos-extra-*.json", content)
@@ -198,11 +239,17 @@ func TestLoadRepoFile_JsonArrayWithExtraFields(t *testing.T) {
 	if repos[0].ExtraFields == nil {
 		t.Fatalf("repo1: extra fields should not be nil")
 	}
-	if repos[0].ExtraFields["customField"] != "value 1" {
+	if len(repos[0].ExtraFields) != 3 {
+		t.Fatalf("repo1: expected 3 extra fields, got %v", repos[0].ExtraFields)
+	}
+	if repos[0].ExtraFields["customField"][0] != "value 1" {
 		t.Fatalf("repo1: extra field 'customField' not captured correctly: %v", repos[0].ExtraFields["customField"])
 	}
-	if repos[0].ExtraFields["version"] != float64(1) {
-		t.Fatalf("repo1: extra field 'version' not captured correctly: %v", repos[0].ExtraFields["version"])
+	if repos[0].ExtraFields["version"][0] != "1" {
+		t.Fatalf("repo1: numeric extra field 'version' not converted correctly: %v", repos[0].ExtraFields["version"])
+	}
+	if !slices.Equal(repos[0].ExtraFields["values"], []string{"1", "two", "true"}) {
+		t.Fatalf("repo1: mixed array not converted correctly: %v", repos[0].ExtraFields["values"])
 	}
 
 	if repos[1].Name != "repo2" {
@@ -214,11 +261,14 @@ func TestLoadRepoFile_JsonArrayWithExtraFields(t *testing.T) {
 	if repos[1].ExtraFields == nil {
 		t.Fatalf("repo2: extra fields should not be nil")
 	}
-	if repos[1].ExtraFields["anotherField"] != "value 2" {
+	if len(repos[1].ExtraFields) != 2 {
+		t.Fatalf("repo2: expected 2 extra fields, got %v", repos[1].ExtraFields)
+	}
+	if repos[1].ExtraFields["anotherField"][0] != "value 2" {
 		t.Fatalf("repo2: extra field 'anotherField' not captured correctly: %v", repos[1].ExtraFields["anotherField"])
 	}
-	if repos[1].ExtraFields["count"] != float64(100) {
-		t.Fatalf("repo2: extra field 'count' not captured correctly: %v", repos[1].ExtraFields["count"])
+	if repos[1].ExtraFields["count"][0] != "100" {
+		t.Fatalf("repo2: numeric extra field 'count' not converted correctly: %v", repos[1].ExtraFields["count"])
 	}
 }
 
@@ -244,15 +294,14 @@ yamlVersion: 2
 	if repos[0].ExtraFields == nil {
 		t.Fatalf("extra fields should not be nil")
 	}
-	if repos[0].ExtraFields["customYamlField"] != "yaml-value" {
+	if len(repos[0].ExtraFields) != 2 {
+		t.Fatalf("expected 2 extra fields, got %v", repos[0].ExtraFields)
+	}
+	if repos[0].ExtraFields["customYamlField"][0] != "yaml-value" {
 		t.Fatalf("extra field 'customYamlField' not captured correctly: %v", repos[0].ExtraFields["customYamlField"])
 	}
-	yamlVersion, ok := repos[0].ExtraFields["yamlVersion"]
-	if !ok {
-		t.Fatalf("extra field 'yamlVersion' not found")
-	}
-	if yamlVersion != uint64(2) {
-		t.Fatalf("extra field 'yamlVersion' not captured correctly: %v (type: %T)", yamlVersion, yamlVersion)
+	if repos[0].ExtraFields["yamlVersion"][0] != "2" {
+		t.Fatalf("numeric extra field 'yamlVersion' not converted correctly: %v", repos[0].ExtraFields["yamlVersion"])
 	}
 }
 
@@ -261,6 +310,8 @@ func TestLoadRepoFile_YAMLArrayWithExtraFields(t *testing.T) {
   rclass: local
   customField: value 1
   priority: 10
+  ratio: 1.25
+  values: [1, two, true]
 - name: yaml-repo2
   packageType: docker
   anotherField: value 2
@@ -283,15 +334,20 @@ func TestLoadRepoFile_YAMLArrayWithExtraFields(t *testing.T) {
 	if repos[0].ExtraFields == nil {
 		t.Fatalf("repo1: extra fields should not be nil")
 	}
-	if repos[0].ExtraFields["customField"] != "value 1" {
+	if len(repos[0].ExtraFields) != 4 {
+		t.Fatalf("repo1: expected 4 extra fields, got %v", repos[0].ExtraFields)
+	}
+	if repos[0].ExtraFields["customField"][0] != "value 1" {
 		t.Fatalf("repo1: extra field 'customField' not captured correctly: %v", repos[0].ExtraFields["customField"])
 	}
-	priority, ok := repos[0].ExtraFields["priority"]
-	if !ok {
-		t.Fatalf("repo1: extra field 'priority' not found")
+	if repos[0].ExtraFields["priority"][0] != "10" {
+		t.Fatalf("repo1: numeric extra field 'priority' not converted correctly: %v", repos[0].ExtraFields["priority"])
 	}
-	if priority != uint64(10) {
-		t.Fatalf("repo1: extra field 'priority' not captured correctly: %v (type: %T)", priority, priority)
+	if repos[0].ExtraFields["ratio"][0] != "1.25" {
+		t.Fatalf("repo1: numeric extra field 'ratio' not converted correctly: %v", repos[0].ExtraFields["ratio"])
+	}
+	if !slices.Equal(repos[0].ExtraFields["values"], []string{"1", "two", "true"}) {
+		t.Fatalf("repo1: mixed array not converted correctly: %v", repos[0].ExtraFields["values"])
 	}
 
 	if repos[1].Name != "yaml-repo2" {
@@ -303,10 +359,13 @@ func TestLoadRepoFile_YAMLArrayWithExtraFields(t *testing.T) {
 	if repos[1].ExtraFields == nil {
 		t.Fatalf("repo2: extra fields should not be nil")
 	}
-	if repos[1].ExtraFields["anotherField"] != "value 2" {
+	if len(repos[1].ExtraFields) != 2 {
+		t.Fatalf("repo2: expected 2 extra fields, got %v", repos[1].ExtraFields)
+	}
+	if repos[1].ExtraFields["anotherField"][0] != "value 2" {
 		t.Fatalf("repo2: extra field 'anotherField' not captured correctly: %v", repos[1].ExtraFields["anotherField"])
 	}
-	if repos[1].ExtraFields["enabled"] != true {
-		t.Fatalf("repo2: extra field 'enabled' not captured correctly: %v", repos[1].ExtraFields["enabled"])
+	if repos[1].ExtraFields["enabled"][0] != "true" {
+		t.Fatalf("repo2: boolean extra field 'enabled' not converted correctly: %v", repos[1].ExtraFields["enabled"])
 	}
 }

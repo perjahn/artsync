@@ -5,38 +5,25 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 )
 
-type Statistics struct {
-	IgnoredInvalidRepoFilesCount    int
-	IgnoredDuplicatedRepoCount      int
-	IgnoredInvalidRepoCount         int
-	IgnoredNoDiffRepoCount          int
-	IgnoredInvalidPermissionCount   int
-	IgnoredNoDiffPermissionCount    int
-	IgnoredDuplicatePermissionCount int
-	CreatedUserCount                int
-	ImportedGroupCount              int
-	CreatedRepoCount                int
-	UpdatedRepoCount                int
-	CreatedPermissionCount          int
-	UpdatedPermissionCount          int
-}
-
 var stats Statistics
 
-type repoDiff struct {
-	repo               Repo
-	hasRepoDiff        bool
-	hasPermDiff        bool
-	existingRepo       *ArtifactoryRepoDetailsResponse
-	existingPermission *ArtifactoryPermissionDetails
-	permUsers          map[string][]string
-	permGroups         map[string][]string
+var artifactoryPropertySpecialChars = strings.NewReplacer(
+	"%5C", "%5C%5C",
+	"%2C", "%5C,",
+	"%3B", "%5C;",
+	"%7C", "%5C|",
+	"%3D", "%5C=",
+)
+
+func escapeArtifactoryProperty(value string) string {
+	return artifactoryPropertySpecialChars.Replace(url.QueryEscape(value))
 }
 
 // for testing, to be able to check output in a controlled manner
@@ -53,6 +40,7 @@ func Provision(
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
 	allpermissiondetails []ArtifactoryPermissionDetails,
+	allproperties []repoProperties,
 	showDiff bool,
 	allowpatterns bool,
 	ldapConfig LdapConfig,
@@ -68,7 +56,7 @@ func Provision(
 		reposToProvision, allusers, allgroups = provisionUsersAndGroups(client, baseurl, token, reposToProvision, allusers, allgroups, ldapConfig, accessToken, refreshToken, dryRun)
 	}
 
-	reposWithDiffs := findReposWithDiffs(reposToProvision, allrepos, allpermissiondetails, allusers, allowpatterns)
+	reposWithDiffs := findReposWithDiffs(reposToProvision, allrepos, allpermissiondetails, allusers, allproperties, allowpatterns, propertiesConfig)
 
 	fmt.Printf("Repos to provision: %d/%d\n", len(reposWithDiffs), len(reposToProvision))
 
@@ -89,10 +77,11 @@ func Provision(
 			}
 		}
 
-		if diffRepo.hasRepoDiff || diffRepo.hasPermDiff {
-			err := setRepoProperties(client, baseurl, token, diffRepo.repo, propertiesConfig, dryRun)
+		if diffRepo.hasPropDiff {
+			err := setRepoProperties(client, baseurl, token, diffRepo.repo, diffRepo.existingProperties.Properties, propertiesConfig, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Error setting properties: %v\n", diffRepo.repo.Name, err)
+				stats.IgnoredInvalidPropertiesCount++
 			}
 		}
 	}
@@ -105,6 +94,8 @@ func Provision(
 	fmt.Printf("  Ignored invalid permission targets: %d\n", stats.IgnoredInvalidPermissionCount)
 	fmt.Printf("  Ignored no diff permission targets: %d\n", stats.IgnoredNoDiffPermissionCount)
 	fmt.Printf("  Ignored duplicate permissions: %d\n", stats.IgnoredDuplicatePermissionCount)
+	fmt.Printf("  Ignored no diff properties: %d\n", stats.IgnoredNoDiffPropertiesCount)
+	fmt.Printf("  Ignored invalid properties: %d\n", stats.IgnoredInvalidPropertiesCount)
 
 	fmt.Printf("  Created users: %d\n", stats.CreatedUserCount)
 	fmt.Printf("  Imported groups: %d\n", stats.ImportedGroupCount)
@@ -113,6 +104,8 @@ func Provision(
 	fmt.Printf("  Updated repos: %d\n", stats.UpdatedRepoCount)
 	fmt.Printf("  Created permission targets: %d\n", stats.CreatedPermissionCount)
 	fmt.Printf("  Updated permission targets: %d\n", stats.UpdatedPermissionCount)
+	fmt.Printf("  Created properties: %d\n", stats.CreatedPropertyCount)
+	fmt.Printf("  Updated properties: %d\n", stats.UpdatedPropertyCount)
 
 	return nil
 }
@@ -122,13 +115,18 @@ func findReposWithDiffs(
 	allrepos []ArtifactoryRepoDetailsResponse,
 	allpermissiondetails []ArtifactoryPermissionDetails,
 	allusers []ArtifactoryUser,
-	allowpatterns bool) []repoDiff {
+	allproperties []repoProperties,
+	allowpatterns bool,
+	propertiesConfig PropertiesConfig) []repoDiff {
 
 	var reposWithDiffs []repoDiff
 
 	for _, repo := range reposToProvision {
+		repo = addUrlToRepoProperties(repo, propertiesConfig)
+
 		hasRepoDiff, existingRepo := hasRepoDiff(repo, allrepos)
 		hasPermDiff, permDiffInfo := hasPermissionTargetDiff(repo, allpermissiondetails, allusers, allowpatterns)
+		hasPropDiff, existingProperties := hasPropertiesDiff(repo, allproperties, propertiesConfig)
 
 		if !hasRepoDiff {
 			stats.IgnoredNoDiffRepoCount++
@@ -136,21 +134,39 @@ func findReposWithDiffs(
 		if !hasPermDiff {
 			stats.IgnoredNoDiffPermissionCount++
 		}
+		if !hasPropDiff {
+			stats.IgnoredNoDiffPropertiesCount++
+		}
 
-		if hasRepoDiff || hasPermDiff {
+		if hasRepoDiff || hasPermDiff || hasPropDiff {
 			reposWithDiffs = append(reposWithDiffs, repoDiff{
 				repo:               repo,
 				hasRepoDiff:        hasRepoDiff,
 				hasPermDiff:        hasPermDiff,
+				hasPropDiff:        hasPropDiff,
 				existingRepo:       existingRepo,
 				existingPermission: permDiffInfo.Existing,
 				permUsers:          permDiffInfo.Users,
 				permGroups:         permDiffInfo.Groups,
+				existingProperties: existingProperties,
 			})
 		}
 	}
 
 	return reposWithDiffs
+}
+
+func addUrlToRepoProperties(repo Repo, propertiesConfig PropertiesConfig) Repo {
+	if !propertiesConfig.SetProperties || propertiesConfig.Url == "" {
+		return repo
+	}
+
+	extraFields := make(map[string][]string, len(repo.ExtraFields)+1)
+	maps.Copy(extraFields, repo.ExtraFields)
+
+	extraFields["url"] = []string{propertiesConfig.Url}
+	repo.ExtraFields = extraFields
+	return repo
 }
 
 func provisionUsersAndGroups(
@@ -350,6 +366,81 @@ func hasRepoDiff(repo Repo, allrepos []ArtifactoryRepoDetailsResponse) (bool, *A
 	return true, nil
 }
 
+func hasPropertiesDiff(repo Repo, allproperties []repoProperties, propertiesConfig PropertiesConfig) (bool, repoProperties) {
+	repoName := repo.Name
+	if repo.Rclass == "remote" {
+		repoName = repo.Name + "-cache"
+	}
+
+	var existingProperties repoProperties
+
+	for _, existingProp := range allproperties {
+		if existingProp.Repo == repoName {
+			existingProperties = existingProp
+			break
+		}
+	}
+
+	if !propertiesConfig.SetProperties {
+		return false, existingProperties
+	}
+
+	desiredProperties := desiredRepoProperties(repo, propertiesConfig.Prefix)
+	prefix := propertiesConfig.Prefix + "."
+	return propertyMapsDiffer(desiredProperties, existingProperties.Properties, prefix), existingProperties
+}
+
+func desiredRepoProperties(repo Repo, prefix string) map[string][]string {
+	desiredProperties := make(map[string][]string)
+	for key, value := range repo.ExtraFields {
+		if len(value) == 0 {
+			continue
+		}
+		normalizedValues := make([]string, 0, len(value))
+		for _, item := range value {
+			normalizedValues = append(normalizedValues, strings.Split(item, ";")...)
+		}
+		desiredProperties[fmt.Sprintf("%s.%s", prefix, key)] = normalizedValues
+	}
+	return desiredProperties
+}
+
+func propertyMapsDiffer(desiredProperties, existingProperties map[string][]string, prefix string) bool {
+	for key, desiredValue := range desiredProperties {
+		if existingValue, ok := existingProperties[key]; !ok || !slices.Equal(existingValue, desiredValue) {
+			return true
+		}
+	}
+
+	for key := range existingProperties {
+		if strings.HasPrefix(key, prefix) {
+			if _, ok := desiredProperties[key]; !ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func repoPropertiesDiff(existingProperties, desiredProperties map[string][]string, prefix string) (string, error) {
+	ownedProperties := make(map[string][]string)
+	for key, value := range existingProperties {
+		if strings.HasPrefix(key, prefix) {
+			ownedProperties[key] = value
+		}
+	}
+
+	oldJSON, err := json.Marshal(ownedProperties)
+	if err != nil {
+		return "", fmt.Errorf("error encoding existing repo properties: %w", err)
+	}
+	newJSON, err := json.Marshal(desiredProperties)
+	if err != nil {
+		return "", fmt.Errorf("error encoding desired repo properties: %w", err)
+	}
+	return PrintDiff(string(oldJSON), string(newJSON), false)
+}
+
 func provisionRepo(
 	client *http.Client,
 	baseurl string,
@@ -539,6 +630,7 @@ func setRepoProperties(
 	baseurl string,
 	token string,
 	repo Repo,
+	existingProperties map[string][]string,
 	propertiesConfig PropertiesConfig,
 	dryRun bool,
 ) error {
@@ -556,55 +648,43 @@ func setRepoProperties(
 		repoName = repo.Name + "-cache"
 	}
 
-	desiredProps := make(map[string][]string)
-
-	if propertiesConfig.Url != "" {
-		desiredProps[fmt.Sprintf("%s.url", propertiesConfig.Prefix)] = []string{propertiesConfig.Url}
-	}
-
-	for key, value := range repo.ExtraFields {
-		if value == nil || value == "" || value == false || value == 0 {
-			continue
-		}
-
-		var values []string
-		switch v := value.(type) {
-		case []any:
-			for _, item := range v {
-				values = append(values, fmt.Sprintf("%v", item))
-			}
-		default:
-			values = []string{fmt.Sprintf("%v", value)}
-		}
-
-		desiredProps[fmt.Sprintf("%s.%s", propertiesConfig.Prefix, key)] = values
-	}
-
-	if len(desiredProps) == 0 {
-		return nil
-	}
-
-	currentProps, err := getRepoProperties(client, baseurl, token, repoName)
-	if err != nil {
-		return err
-	}
-
-	needsUpdate := false
-	if len(desiredProps) != len(currentProps) {
-		needsUpdate = true
-	} else {
-		for key, desiredVal := range desiredProps {
-			if currentVal, ok := currentProps[key]; !ok || !equalStringSlices(currentVal, desiredVal) {
-				needsUpdate = true
-				break
-			}
-		}
-	}
+	desiredProps := desiredRepoProperties(repo, propertiesConfig.Prefix)
+	prefix := propertiesConfig.Prefix + "."
+	needsUpdate := propertyMapsDiffer(desiredProps, existingProperties, prefix)
 
 	if needsUpdate {
+		diffText, err := repoPropertiesDiff(existingProperties, desiredProps, prefix)
+		if err != nil {
+			return fmt.Errorf("error generating repo properties diff: %w", err)
+		}
+		if diffText != "" {
+			fmt.Printf("'%s': Property diff:\n%s", repoName, diffText)
+		}
+	}
+
+	if needsUpdate && len(desiredProps) > 0 {
+		createdProperties := 0
+		updatedProperties := 0
+		desiredKeys := make([]string, 0, len(desiredProps))
+		for key := range desiredProps {
+			desiredKeys = append(desiredKeys, key)
+		}
+		slices.Sort(desiredKeys)
+
 		var properties []string
-		for key, value := range desiredProps {
-			properties = append(properties, fmt.Sprintf("%s=%s", url.QueryEscape(key), url.QueryEscape(fmt.Sprint(value))))
+		for _, key := range desiredKeys {
+			value := desiredProps[key]
+			if existingValue, ok := existingProperties[key]; !ok {
+				createdProperties++
+			} else if !equalStringSlices(existingValue, value) {
+				updatedProperties++
+			}
+
+			encodedValues := make([]string, len(value))
+			for i, item := range value {
+				encodedValues[i] = escapeArtifactoryProperty(item)
+			}
+			properties = append(properties, fmt.Sprintf("%s=%s", escapeArtifactoryProperty(key), strings.Join(encodedValues, ",")))
 		}
 
 		url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties=%s&recursive=0", baseurl, repoName, strings.Join(properties, ";"))
@@ -628,20 +708,26 @@ func setRepoProperties(
 			}
 		}
 
+		stats.CreatedPropertyCount += createdProperties
+		stats.UpdatedPropertyCount += updatedProperties
 		fmt.Printf("'%s': Set properties: %s.\n", repoName, strings.Join(properties, ", "))
 	}
 
-	prefix := propertiesConfig.Prefix + "."
 	var unused []string
-	for key := range currentProps {
+	for key := range existingProperties {
 		if strings.HasPrefix(key, prefix) {
 			if _, ok := desiredProps[key]; !ok {
 				unused = append(unused, key)
 			}
 		}
 	}
+	slices.Sort(unused)
 	if len(unused) > 0 {
-		deleteUrl := fmt.Sprintf("%s/artifactory/api/storage/%s?properties=%s&recursive=0", baseurl, repoName, strings.Join(unused, ";"))
+		encodedUnused := make([]string, len(unused))
+		for i, key := range unused {
+			encodedUnused[i] = escapeArtifactoryProperty(key)
+		}
+		deleteUrl := fmt.Sprintf("%s/artifactory/api/storage/%s?properties=%s&recursive=0", baseurl, repoName, strings.Join(encodedUnused, ","))
 		reqDel, err := http.NewRequest("DELETE", deleteUrl, nil)
 		if err != nil {
 			return fmt.Errorf("error creating delete properties request: %w", err)
@@ -662,67 +748,6 @@ func setRepoProperties(
 	}
 
 	return nil
-}
-
-type ArtifactoryPropertiesResponse struct {
-	Properties map[string][]string `json:"properties"`
-}
-
-func getRepoProperties(
-	client *http.Client,
-	baseurl string,
-	token string,
-	repoName string,
-) (map[string][]string, error) {
-	url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties", baseurl, repoName)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error getting properties request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error getting repo properties: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 && resp.StatusCode != 404 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("error getting repo properties, unexpected status: %s, body: %s", resp.Status, body)
-	}
-
-	if resp.StatusCode == 404 {
-		return make(map[string][]string), nil
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-	bodyStr := strings.TrimSpace(string(body))
-
-	if bodyStr == "" {
-		return make(map[string][]string), nil
-	}
-
-	var propsResponse ArtifactoryPropertiesResponse
-	err = json.Unmarshal(body, &propsResponse)
-	if err == nil && propsResponse.Properties != nil {
-		props := make(map[string][]string)
-		for key, values := range propsResponse.Properties {
-			if len(values) > 0 {
-				props[key] = values
-			}
-		}
-		return props, nil
-	}
-
-	return make(map[string][]string), nil
-}
-
-type PermissionDiffInfo struct {
-	Existing *ArtifactoryPermissionDetails
-	Users    map[string][]string
-	Groups   map[string][]string
 }
 
 func hasPermissionTargetDiff(repo Repo, allpermissiondetails []ArtifactoryPermissionDetails, allusers []ArtifactoryUser, allowpatterns bool) (bool, PermissionDiffInfo) {

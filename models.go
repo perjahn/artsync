@@ -86,25 +86,25 @@ type ArtifactoryUserRequest struct {
 }
 
 type Repo struct {
-	Name           string         `json:"name,omitempty"`
-	Names          []string       `json:"names,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Rclass         string         `json:"rclass,omitempty"`
-	PackageType    string         `json:"packageType,omitempty"`
-	Layout         string         `json:"layout,omitempty"`
-	Url            string         `json:"url,omitempty"`
-	PermissionName string         `json:"permissionName,omitempty"`
-	Read           []string       `json:"read,omitempty"`
-	Annotate       []string       `json:"annotate,omitempty"`
-	Write          []string       `json:"write,omitempty"`
-	Delete         []string       `json:"delete,omitempty"`
-	Manage         []string       `json:"manage,omitempty"`
-	Scan           []string       `json:"scan,omitempty"`
-	Repositories   []string       `json:"repositories,omitempty"`
-	SourceFile     string         `json:"-"`
-	SourceOffset   int            `json:"-"`
-	SourceLine     int            `json:"-"`
-	ExtraFields    map[string]any `json:"-"`
+	Name           string              `json:"name,omitempty"`
+	Names          []string            `json:"names,omitempty"`
+	Description    string              `json:"description,omitempty"`
+	Rclass         string              `json:"rclass,omitempty"`
+	PackageType    string              `json:"packageType,omitempty"`
+	Layout         string              `json:"layout,omitempty"`
+	Url            string              `json:"url,omitempty"`
+	PermissionName string              `json:"permissionName,omitempty"`
+	Read           []string            `json:"read,omitempty"`
+	Annotate       []string            `json:"annotate,omitempty"`
+	Write          []string            `json:"write,omitempty"`
+	Delete         []string            `json:"delete,omitempty"`
+	Manage         []string            `json:"manage,omitempty"`
+	Scan           []string            `json:"scan,omitempty"`
+	Repositories   []string            `json:"repositories,omitempty"`
+	SourceFile     string              `json:"-"`
+	SourceOffset   int                 `json:"-"`
+	SourceLine     int                 `json:"-"`
+	ExtraFields    map[string][]string `json:"-"`
 }
 
 type ArtifactoryLDAPGroupSettings struct {
@@ -172,4 +172,65 @@ type PropertiesConfig struct {
 	SetProperties bool   `json:"-"`
 	Prefix        string `json:"prefix"`
 	Url           string `json:"url"`
+}
+
+type aqlSearchResult struct {
+	Results []aqlRootFolder `json:"results"`
+}
+
+type aqlRootFolder struct {
+	Repo       string        `json:"repo"`
+	Properties []aqlProperty `json:"properties"`
+}
+
+type aqlProperty struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type ArtifactoryPropertiesResponse struct {
+	Properties map[string][]string `json:"properties"`
+}
+
+type repoProperties struct {
+	Repo       string
+	Properties map[string][]string
+}
+
+type Statistics struct {
+	IgnoredInvalidRepoFilesCount    int
+	IgnoredDuplicatedRepoCount      int
+	IgnoredInvalidRepoCount         int
+	IgnoredNoDiffRepoCount          int
+	IgnoredInvalidPermissionCount   int
+	IgnoredNoDiffPermissionCount    int
+	IgnoredInvalidPropertiesCount   int
+	IgnoredDuplicatePermissionCount int
+	IgnoredNoDiffPropertiesCount    int
+	CreatedUserCount                int
+	ImportedGroupCount              int
+	CreatedRepoCount                int
+	UpdatedRepoCount                int
+	CreatedPermissionCount          int
+	UpdatedPermissionCount          int
+	CreatedPropertyCount            int
+	UpdatedPropertyCount            int
+}
+
+type repoDiff struct {
+	repo               Repo
+	hasRepoDiff        bool
+	hasPermDiff        bool
+	hasPropDiff        bool
+	existingRepo       *ArtifactoryRepoDetailsResponse
+	existingPermission *ArtifactoryPermissionDetails
+	permUsers          map[string][]string
+	permGroups         map[string][]string
+	existingProperties repoProperties
+}
+
+type PermissionDiffInfo struct {
+	Existing *ArtifactoryPermissionDetails
+	Users    map[string][]string
+	Groups   map[string][]string
 }

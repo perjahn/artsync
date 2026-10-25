@@ -155,7 +155,7 @@ func main() {
 		}
 	}
 
-	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, importUsersAndGroupsFilename != "", useCache)
+	repos, users, groups, permissiondetails, properties, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, importUsersAndGroupsFilename != "", useCache)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -192,7 +192,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, propertiesConfig, dryRun)
+		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, properties, showDiff, allowpatterns, ldapConfig, propertiesConfig, dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)

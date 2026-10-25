@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,7 @@ type testcase struct {
 	users                  []ArtifactoryUser
 	groups                 []ArtifactoryGroup
 	permissiondetails      []ArtifactoryPermissionDetails
+	properties             []repoProperties
 	allowPatterns          bool
 	dryRun                 bool
 	HTTPResponseUser       string
@@ -41,17 +43,17 @@ type testcase struct {
 func TestProvisionSimple(t *testing.T) {
 	tests := []testcase{
 		// Minimal
-		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, false, false, "", "", "", ""},
+		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, []repoProperties{}, false, false, "", "", "", ""},
 		// allowPatterns
-		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, true, false, "", "", "", ""},
+		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, []repoProperties{}, true, false, "", "", "", ""},
 		// dryRun
-		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, false, true, "", "", "", ""},
+		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, []repoProperties{}, false, true, "", "", "", ""},
 		// dryRun
-		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, true, true, "", "", "", ""},
+		{[]Repo{}, []ArtifactoryRepoDetailsResponse{}, []ArtifactoryUser{}, []ArtifactoryGroup{}, []ArtifactoryPermissionDetails{}, []repoProperties{}, true, true, "", "", "", ""},
 	}
 	for i, tc := range tests {
 		var client *http.Client
-		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, false, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 		if err != nil {
 			t.Errorf("ProvisionSimple (%d/%d): error = %v", i+1, len(tests), err)
 		}
@@ -102,6 +104,7 @@ func TestProvisionPermissions(t *testing.T) {
 				JsonSource: `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["OTHER","READ","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`,
 			},
 		},
+		[]repoProperties{},
 		false,
 		false,
 		"",
@@ -122,7 +125,7 @@ func TestProvisionPermissions(t *testing.T) {
 		return response, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionPermissions: error = %v", err)
 	}
@@ -188,6 +191,7 @@ func TestProvisionRenamedPermissions(t *testing.T) {
 				JsonSource: `{"aaa":{"bbb":{"actions":{"groups":{},"users":{"test-user":["OTHER","READ","WRITE"]}},"targets":{"test-repo":{"exclude_patterns":[],"include_patterns":["**"]}}}}}`,
 			},
 		},
+		[]repoProperties{},
 		false,
 		false,
 		"",
@@ -208,7 +212,7 @@ func TestProvisionRenamedPermissions(t *testing.T) {
 		return response, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionRenamedPermissions: error = %v", err)
 	}
@@ -273,6 +277,7 @@ func TestProvisionLdap(t *testing.T) {
 				},
 			},
 		},
+		[]repoProperties{},
 		false,
 		false,
 		`{"ok":true}`,
@@ -401,7 +406,7 @@ func TestProvisionLdap(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
 	}
@@ -458,6 +463,7 @@ func TestProvisionLdapFail(t *testing.T) {
 				},
 			},
 		},
+		[]repoProperties{},
 		false,
 		false,
 		`{"ok":true}`,
@@ -568,7 +574,7 @@ func TestProvisionLdapFail(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdapFail: unexpected error = %v", err)
 	}
@@ -580,14 +586,17 @@ func TestProvisionLdapFail(t *testing.T) {
 
 // Test setRepoProperties function
 func TestSetRepoProperties(t *testing.T) {
+	ClearStats()
 	repo := Repo{
 		Name:        "test-repo",
 		Description: "Test repository",
 		Rclass:      "local",
 		PackageType: "docker",
-		ExtraFields: map[string]any{
-			"owner":   "admin",
-			"version": "1.0;2.0",
+		ExtraFields: map[string][]string{
+			"owner":       {"admin"},
+			"semicolon":   {"left;right"},
+			"version":     {"1.0", "2.0"},
+			"special,key": {"left,right", `back\slash`, "pipe|value", "equals=value"},
 		},
 	}
 
@@ -596,6 +605,7 @@ func TestSetRepoProperties(t *testing.T) {
 		Prefix:        "mycorp",
 		Url:           "https://example.com/docs",
 	}
+	repo = addUrlToRepoProperties(repo, propertiesConfig)
 
 	var capturedUrl string
 	var capturedMethod string
@@ -627,7 +637,7 @@ func TestSetRepoProperties(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{}, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoProperties: unexpected error = %v", err)
 	}
@@ -640,16 +650,136 @@ func TestSetRepoProperties(t *testing.T) {
 		t.Errorf("SetRepoProperties: url format incorrect: %s", capturedUrl)
 	}
 
-	if !strings.Contains(capturedUrl, "mycorp.url=%5Bhttps%3A%2F%2Fexample.com%2Fdocs%5D") {
+	if !strings.Contains(capturedUrl, "mycorp.url=https%3A%2F%2Fexample.com%2Fdocs") {
 		t.Errorf("SetRepoProperties: missing url property in %s", capturedUrl)
 	}
 
-	if !strings.Contains(capturedUrl, "mycorp.owner=%5Badmin%5D") {
+	if !strings.Contains(capturedUrl, "mycorp.owner=admin") {
 		t.Errorf("SetRepoProperties: missing owner property in %s", capturedUrl)
 	}
 
-	if !strings.Contains(capturedUrl, "mycorp.version=%5B1.0%3B2.0%5D") {
-		t.Errorf("SetRepoProperties: missing version property with escaped semicolon in %s", capturedUrl)
+	if !strings.Contains(capturedUrl, "mycorp.version=1.0,2.0") {
+		t.Errorf("SetRepoProperties: missing comma-separated multi-value property in %s", capturedUrl)
+	}
+	if !strings.Contains(capturedUrl, "mycorp.semicolon=left,right") {
+		t.Errorf("SetRepoProperties: semicolon-separated values should use a comma in %s", capturedUrl)
+	}
+	if !strings.Contains(capturedUrl, "mycorp.special%5C,key=left%5C,right,back%5C%5Cslash,pipe%5C|value,equals%5C=value") {
+		t.Errorf("SetRepoProperties: special characters not encoded with Artifactory escaping in %s", capturedUrl)
+	}
+
+	orderedProperties := []string{
+		"mycorp.owner=admin",
+		"mycorp.semicolon=left,right",
+		"mycorp.special%5C,key=",
+		"mycorp.url=https%3A%2F%2Fexample.com%2Fdocs",
+		"mycorp.version=1.0,2.0",
+	}
+	previousPosition := -1
+	for _, property := range orderedProperties {
+		position := strings.Index(capturedUrl, property)
+		if position <= previousPosition {
+			t.Errorf("SetRepoProperties: property %q is missing or out of order in %s", property, capturedUrl)
+		}
+		previousPosition = position
+	}
+}
+
+func TestSetRepoPropertiesCountsCreatedAndUpdated(t *testing.T) {
+	ClearStats()
+	repo := Repo{
+		Name: "test-repo",
+		ExtraFields: map[string][]string{
+			"new":     {"value"},
+			"changed": {"new-value"},
+			"same":    {"same-value"},
+		},
+	}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
+		"mycorp.changed": {"old-value"},
+		"mycorp.same":    {"same-value"},
+	}, propertiesConfig, false)
+	if err != nil {
+		t.Fatalf("setRepoProperties() error = %v", err)
+	}
+	if stats.CreatedPropertyCount != 1 {
+		t.Errorf("CreatedPropertyCount = %d, want 1", stats.CreatedPropertyCount)
+	}
+	if stats.UpdatedPropertyCount != 1 {
+		t.Errorf("UpdatedPropertyCount = %d, want 1", stats.UpdatedPropertyCount)
+	}
+}
+
+func TestSetRepoPropertiesRemoteRepoUsesCache(t *testing.T) {
+	var capturedPath string
+	var capturedMethod string
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		capturedPath = req.URL.Path
+		capturedMethod = req.Method
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	repo := Repo{
+		Name:   "remote-repo",
+		Rclass: "remote",
+		Url:    "https://remote.example.com/repo",
+		ExtraFields: map[string][]string{
+			"owner": {"admin"},
+		},
+	}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, nil, propertiesConfig, false)
+	if err != nil {
+		t.Fatalf("setRepoProperties() error = %v", err)
+	}
+	if capturedMethod != "PUT" {
+		t.Fatalf("request method = %q, want PUT", capturedMethod)
+	}
+	if capturedPath != "/artifactory/api/storage/remote-repo-cache" {
+		t.Fatalf("request path = %q, want cache repo path", capturedPath)
+	}
+}
+
+func TestSetRepoPropertiesVirtualRepoIsSkipped(t *testing.T) {
+	requestCount := 0
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	repo := Repo{
+		Name:   "virtual-repo",
+		Rclass: "virtual",
+		ExtraFields: map[string][]string{
+			"owner": {"admin"},
+		},
+	}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, nil, propertiesConfig, false)
+	if err != nil {
+		t.Fatalf("setRepoProperties() error = %v", err)
+	}
+	if requestCount != 0 {
+		t.Fatalf("HTTP requests = %d, want 0 for virtual repo", requestCount)
 	}
 }
 
@@ -657,7 +787,7 @@ func TestSetRepoProperties(t *testing.T) {
 func TestSetRepoPropertiesEmpty(t *testing.T) {
 	repo := Repo{
 		Name:        "test-repo",
-		ExtraFields: map[string]any{},
+		ExtraFields: map[string][]string{},
 	}
 
 	propertiesConfig := PropertiesConfig{
@@ -665,6 +795,7 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 		Prefix:        "mycorp",
 		Url:           "abc123",
 	}
+	repo = addUrlToRepoProperties(repo, propertiesConfig)
 
 	var requestCount int
 
@@ -686,7 +817,7 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{}, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoPropertiesEmpty: unexpected error = %v", err)
 	}
@@ -703,8 +834,8 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 		Description: "Test repository",
 		Rclass:      "local",
 		PackageType: "docker",
-		ExtraFields: map[string]any{
-			"owner": "admin",
+		ExtraFields: map[string][]string{
+			"owner": {"admin"},
 		},
 	}
 
@@ -713,6 +844,7 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 		Prefix:        "mycorp",
 		Url:           "https://example.com/docs",
 	}
+	repo = addUrlToRepoProperties(repo, propertiesConfig)
 
 	var requests []string
 
@@ -734,7 +866,13 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
+		"mycorp.oldprop": {"oldvalue"},
+		"mycorp.old,key": {"oldvalue"},
+		"mycorp.owner":   {"admin"},
+		"mycorp.url":     {"https://example.com/docs"},
+		"other.key":      {"value"},
+	}, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoPropertiesDeleteUnused: unexpected error = %v", err)
 	}
@@ -756,6 +894,15 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 	if !strings.Contains(deleteUrl, "mycorp.oldprop") {
 		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE should include mycorp.oldprop, got %s", deleteUrl)
 	}
+	if !strings.Contains(deleteUrl, "mycorp.old%5C,key") {
+		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE should use Artifactory escaping for commas, got %s", deleteUrl)
+	}
+	if !strings.Contains(deleteUrl, "properties=mycorp.old%5C,key,mycorp.oldprop&recursive=0") {
+		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE properties should be alphabetical, got %s", deleteUrl)
+	}
+	if strings.Contains(deleteUrl, ";") {
+		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE property keys should be comma-separated, got %s", deleteUrl)
+	}
 
 	if strings.Contains(deleteUrl, "other.key") {
 		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE should NOT include other.key (different prefix), got %s", deleteUrl)
@@ -769,8 +916,8 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 		Description: "Test repository",
 		Rclass:      "local",
 		PackageType: "docker",
-		ExtraFields: map[string]any{
-			"owner": "admin",
+		ExtraFields: map[string][]string{
+			"owner": {"admin"},
 		},
 	}
 
@@ -779,6 +926,7 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 		Prefix:        "mycorp",
 		Url:           "https://example.com/docs",
 	}
+	repo = addUrlToRepoProperties(repo, propertiesConfig)
 
 	var requests []string
 
@@ -800,7 +948,11 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
+		"mycorp.url":   {"https://example.com/docs"},
+		"mycorp.owner": {"admin"},
+		"other.key":    {"preserve me"},
+	}, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoPropertiesNoUpdate: unexpected error = %v", err)
 	}
@@ -821,6 +973,202 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 
 	if deleteCalled {
 		t.Errorf("SetRepoPropertiesNoUpdate: should not call DELETE when no unused properties exist")
+	}
+}
+
+func TestRepoPropertiesDiff(t *testing.T) {
+	diffText, err := repoPropertiesDiff(
+		map[string][]string{
+			"mycorp.owner":  {"old"},
+			"mycorp.legacy": {"remove me"},
+			"other.key":     {"leave unchanged"},
+		},
+		map[string][]string{
+			"mycorp.owner":   {"new"},
+			"mycorp.version": {"1.0"},
+		},
+		"mycorp.",
+	)
+	if err != nil {
+		t.Fatalf("repoPropertiesDiff() error = %v", err)
+	}
+
+	var removedOld, addedNew, removedLegacy, addedVersion bool
+	for _, line := range strings.Split(diffText, "\n") {
+		removedOld = removedOld || (strings.HasPrefix(line, "-") && strings.Contains(line, `"old"`))
+		addedNew = addedNew || (strings.HasPrefix(line, "+") && strings.Contains(line, `"new"`))
+		removedLegacy = removedLegacy || (strings.HasPrefix(line, "-") && strings.Contains(line, `"mycorp.legacy"`))
+		addedVersion = addedVersion || (strings.HasPrefix(line, "+") && strings.Contains(line, `"mycorp.version"`))
+	}
+	if !removedOld || !addedNew || !removedLegacy || !addedVersion {
+		t.Fatalf("diff missing expected additions or removals:\n%s", diffText)
+	}
+	if strings.Contains(diffText, "other.key") || strings.Contains(diffText, "leave unchanged") {
+		t.Fatalf("diff included a property outside the configured prefix:\n%s", diffText)
+	}
+}
+
+func TestHasPropertiesDiff(t *testing.T) {
+	repo := Repo{
+		Name: "test-repo",
+		ExtraFields: map[string][]string{
+			"owners": {"admin", "release"},
+		},
+	}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+
+	tests := []struct {
+		name       string
+		properties map[string][]string
+		wantDiff   bool
+	}{
+		{
+			name: "matching values in the same order",
+			properties: map[string][]string{
+				"mycorp.owners": {"admin", "release"},
+			},
+			wantDiff: false,
+		},
+		{
+			name: "different value order",
+			properties: map[string][]string{
+				"mycorp.owners": {"release", "admin"},
+			},
+			wantDiff: true,
+		},
+		{
+			name: "different values",
+			properties: map[string][]string{
+				"mycorp.owners": {"admin", "viewer"},
+			},
+			wantDiff: true,
+		},
+		{
+			name: "stale prefixed property",
+			properties: map[string][]string{
+				"mycorp.owners": {"admin", "release"},
+				"mycorp.legacy": {"old"},
+			},
+			wantDiff: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			properties := []repoProperties{{Repo: repo.Name, Properties: test.properties}}
+			gotDiff, _ := hasPropertiesDiff(repo, properties, propertiesConfig)
+			if gotDiff != test.wantDiff {
+				t.Errorf("hasPropertiesDiff() = %t, want %t", gotDiff, test.wantDiff)
+			}
+		})
+	}
+}
+
+func TestHasPropertiesDiffRemoteRepoUsesCacheProperties(t *testing.T) {
+	repo := Repo{
+		Name:   "test-remote",
+		Rclass: "remote",
+		ExtraFields: map[string][]string{
+			"owner": {"admin"},
+		},
+	}
+	properties := []repoProperties{{
+		Repo: "test-remote-cache",
+		Properties: map[string][]string{
+			"mycorp.owner": {"admin"},
+		},
+	}}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+
+	gotDiff, existingProperties := hasPropertiesDiff(repo, properties, propertiesConfig)
+	if gotDiff {
+		t.Fatal("hasPropertiesDiff() = true for matching properties on remote cache")
+	}
+	if existingProperties.Repo != "test-remote-cache" {
+		t.Fatalf("existing properties repo = %q, want %q", existingProperties.Repo, "test-remote-cache")
+	}
+}
+
+func TestHasPropertiesDiffSemicolonSeparatedValues(t *testing.T) {
+	repo := Repo{
+		Name: "test-repo",
+		ExtraFields: map[string][]string{
+			"colors": {"red;blue"},
+		},
+	}
+	properties := []repoProperties{{
+		Repo: repo.Name,
+		Properties: map[string][]string{
+			"mycorp.colors": {"red", "blue"},
+		},
+	}}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+
+	gotDiff, _ := hasPropertiesDiff(repo, properties, propertiesConfig)
+	if gotDiff {
+		t.Fatal("hasPropertiesDiff() = true for semicolon-separated values already stored as an array")
+	}
+}
+
+func TestFindReposWithDiffsAddsConfiguredURLProperty(t *testing.T) {
+	repo := Repo{Name: "test-repo"}
+	propertiesConfig := PropertiesConfig{
+		SetProperties: true,
+		Prefix:        "mycorp",
+		Url:           "https://example.com/docs",
+	}
+
+	reposWithDiffs := findReposWithDiffs(
+		[]Repo{repo},
+		nil,
+		nil,
+		nil,
+		[]repoProperties{{
+			Repo:       repo.Name,
+			Properties: map[string][]string{"mycorp.url": {"old-url"}},
+		}},
+		false,
+		propertiesConfig,
+	)
+	if len(reposWithDiffs) != 1 {
+		t.Fatalf("expected one repo with diffs, got %d", len(reposWithDiffs))
+	}
+	if !reposWithDiffs[0].hasPropDiff {
+		t.Fatal("expected configured URL change to produce a property diff")
+	}
+	if got := reposWithDiffs[0].repo.ExtraFields["url"]; !slices.Equal(got, []string{propertiesConfig.Url}) {
+		t.Fatalf("configured URL in ExtraFields = %v, want [%s]", got, propertiesConfig.Url)
+	}
+	if repo.ExtraFields != nil {
+		t.Fatal("findReposWithDiffs should not mutate the input repo")
+	}
+}
+
+func TestSetRepoPropertiesDeletesAllWhenDesiredIsEmpty(t *testing.T) {
+	var methods []string
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		methods = append(methods, req.Method)
+		return &http.Response{
+			StatusCode: 204,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	err := setRepoProperties(
+		client,
+		"https://artifactory.example.com",
+		"test-token",
+		Repo{Name: "test-repo", ExtraFields: map[string][]string{}},
+		map[string][]string{"mycorp.old": {"value"}},
+		PropertiesConfig{SetProperties: true, Prefix: "mycorp"},
+		false,
+	)
+	if err != nil {
+		t.Fatalf("setRepoProperties() error = %v", err)
+	}
+	if !slices.Equal(methods, []string{"DELETE"}) {
+		t.Fatalf("HTTP methods = %v, want [DELETE]", methods)
 	}
 }
 
@@ -848,6 +1196,7 @@ func TestProvisionCreateVirtualRepo(t *testing.T) {
 		[]ArtifactoryUser{},
 		[]ArtifactoryGroup{},
 		[]ArtifactoryPermissionDetails{},
+		[]repoProperties{},
 		false,
 		false,
 		"",
@@ -873,7 +1222,7 @@ func TestProvisionCreateVirtualRepo(t *testing.T) {
 	})
 
 	ClearStats()
-	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionCreateVirtualRepo: error = %v", err)
 	}
@@ -923,6 +1272,7 @@ func TestProvisionUpdateVirtualRepo(t *testing.T) {
 		[]ArtifactoryUser{},
 		[]ArtifactoryGroup{},
 		[]ArtifactoryPermissionDetails{},
+		[]repoProperties{},
 		false,
 		false,
 		"",
@@ -948,7 +1298,7 @@ func TestProvisionUpdateVirtualRepo(t *testing.T) {
 	})
 
 	ClearStats()
-	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionUpdateVirtualRepo: error = %v", err)
 	}
@@ -1005,7 +1355,7 @@ func TestProvisionVirtualRepoMissingRepoList(t *testing.T) {
 		return nil, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionVirtualRepoMissingRepoList: error = %v", err)
 	}
@@ -1035,6 +1385,7 @@ func TestProvisionVirtualRepoMissingRepoListTriggerChange(t *testing.T) {
 		[]ArtifactoryUser{},
 		[]ArtifactoryGroup{},
 		[]ArtifactoryPermissionDetails{},
+		[]repoProperties{},
 		false,
 		false,
 		"",
@@ -1059,7 +1410,7 @@ func TestProvisionVirtualRepoMissingRepoListTriggerChange(t *testing.T) {
 		return response, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, tc.properties, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionVirtualRepoMissingRepoListTriggerChange: error = %v", err)
 	}

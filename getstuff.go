@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var pagenumRepos int
@@ -23,6 +24,7 @@ func GetStuff(
 	[]ArtifactoryUser,
 	[]ArtifactoryGroup,
 	[]ArtifactoryPermissionDetails,
+	[]repoProperties,
 	[]ArtifactoryLDAPSettings,
 	[]ArtifactoryLDAPGroupSettings,
 	error) {
@@ -32,71 +34,69 @@ func GetStuff(
 		fmt.Printf("Creating folder: '%s'\n", cachefolder)
 		err = os.Mkdir(cachefolder, 0755)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, fmt.Errorf("error creating folder '%s': %w", cachefolder, err)
+			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("error creating folder '%s': %w", cachefolder, err)
 		}
 	}
 
 	repos, err := getRepos(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-
 	fmt.Printf("Repo count: %d\n", len(repos))
 
 	repodetails, err := getRepoDetails(client, baseurl, token, repos, cachefolder, usecache)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-
 	fmt.Printf("Repo details count: %d\n", len(repodetails))
 
 	permissions, err := getPermissions(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-
 	fmt.Printf("Permissions count: %d\n", len(permissions))
 
 	users, err := getUsers(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-
 	fmt.Printf("User count: %d\n", len(users))
 
 	groups, err := getGroups(client, baseurl, token, cachefolder, usecache)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-
 	fmt.Printf("Group count: %d\n", len(groups))
 
 	permissiondetails, err := getPermissionDetails(client, baseurl, token, permissions, cachefolder, usecache)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-
 	fmt.Printf("Permission details count: %d\n", len(permissiondetails))
+
+	properties, err := getRootFolderProperties(client, baseurl, token, cachefolder, usecache)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, err
+	}
+	fmt.Printf("Property count: %d\n", len(properties))
 
 	var ldapsettings []ArtifactoryLDAPSettings
 	var ldapgroupsettings []ArtifactoryLDAPGroupSettings
 	if retrieveldapsettings {
 		ldapsettings, err = getLDAPSettings(client, baseurl, token, cachefolder, usecache)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, nil, err
 		}
-
 		fmt.Printf("LDAP settings count: %d\n", len(ldapsettings))
 
 		ldapgroupsettings, err = getLDAPGroupSettings(client, baseurl, token, cachefolder, usecache)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, nil, err
 		}
-
 		fmt.Printf("LDAP group settings count: %d\n", len(ldapgroupsettings))
 	}
 
-	return repodetails, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, nil
+	return repodetails, users, groups, permissiondetails, properties, ldapsettings, ldapgroupsettings, nil
 }
 
 func getUsers(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryUser, error) {
@@ -602,6 +602,131 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 	}
 
 	return allpermissiondetails, nil
+}
+
+func getRootFolderProperties(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]repoProperties, error) {
+	cachefilename := filepath.Join(cachefolder, "allproperties.json")
+	if usecache {
+		if _, err := os.Stat(cachefilename); err == nil {
+			fmt.Printf("Using cached properties from file: '%s'\n", cachefilename)
+
+			data, err := os.ReadFile(cachefilename)
+			if err != nil {
+				return nil, fmt.Errorf("error reading properties: %w", err)
+			}
+
+			var allproperties []repoProperties
+			if err := json.Unmarshal(data, &allproperties); err != nil {
+				return nil, fmt.Errorf("error parsing properties cache: %w", err)
+			}
+			return allproperties, nil
+		}
+	}
+
+	const rootFolderQuery = `items.find({"type":"folder","path":".","name":"."}).include("repo","path","name","property.*")`
+
+	req, err := http.NewRequest(http.MethodPost, baseurl+"/artifactory/api/search/aql", strings.NewReader(rootFolderQuery))
+	if err != nil {
+		return nil, fmt.Errorf("error getting root folder properties, request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error getting root folder properties: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error getting root folder properties, reading body: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("error getting root folder properties, unexpected status %s", resp.Status)
+	}
+
+	var result aqlSearchResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("error getting root folder properties, decode: %w", err)
+	}
+
+	var allproperties []repoProperties
+	for _, folder := range result.Results {
+		repoProps := repoProperties{
+			Repo:       folder.Repo,
+			Properties: map[string][]string{},
+		}
+
+		if hasPropertyArraysEncodedAsDuplicatedKeys(folder.Properties) {
+			props, err := getRepoPropertiesArraysInCorrectOrder(client, baseurl, token, folder.Repo)
+			if err != nil {
+				return nil, err
+			}
+			repoProps.Properties = props
+		} else {
+			for _, property := range folder.Properties {
+				repoProps.Properties[property.Key] = []string{property.Value}
+			}
+		}
+
+		allproperties = append(allproperties, repoProps)
+	}
+
+	cacheJSON, err := json.MarshalIndent(allproperties, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("error generating properties cache: %w", err)
+	}
+	if err := os.WriteFile(cachefilename, cacheJSON, 0600); err != nil {
+		return nil, fmt.Errorf("error saving properties: %w", err)
+	}
+
+	return allproperties, nil
+}
+
+func hasPropertyArraysEncodedAsDuplicatedKeys(aqlProperty []aqlProperty) bool {
+	propertyKeys := make(map[string]bool)
+	for _, property := range aqlProperty {
+		if _, exists := propertyKeys[property.Key]; exists {
+			return true
+		}
+		propertyKeys[property.Key] = true
+	}
+	return false
+}
+
+func getRepoPropertiesArraysInCorrectOrder(client *http.Client, baseurl string, token string, repoName string) (map[string][]string, error) {
+	url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties", baseurl, repoName)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error getting repo properties, request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error getting repo properties: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error getting repo properties, reading body: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("error getting repo properties, unexpected status: %s, body: %s", resp.Status, body)
+	}
+
+	var propsResponse ArtifactoryPropertiesResponse
+	if err = json.Unmarshal(body, &propsResponse); err != nil {
+		return nil, fmt.Errorf("error getting repo properties, decode: %w", err)
+	}
+
+	return propsResponse.Properties, nil
 }
 
 func getLDAPSettings(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryLDAPSettings, error) {

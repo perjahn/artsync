@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -59,24 +60,70 @@ func loadRepoFile(repofile string, provisionEmpty bool) ([]Repo, error) {
 	return repos, nil
 }
 
-func extractExtraFields(rawData map[string]any) map[string]any {
-	knownFields := map[string]bool{
-		"name": true, "names": true, "description": true, "rclass": true,
-		"packageType": true, "layout": true, "url": true, "permissionName": true,
-		"read": true, "annotate": true, "write": true, "delete": true,
-		"manage": true, "scan": true, "repositories": true,
+func extractExtraFields(rawData map[string]any) map[string][]string {
+	knownFields := make(map[string]bool)
+	repoType := reflect.TypeFor[Repo]()
+	for field := range repoType.Fields() {
+		jsonName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if jsonName != "" && jsonName != "-" {
+			knownFields[jsonName] = true
+		}
 	}
 
-	extraFields := make(map[string]any)
+	extraFields := make(map[string][]string)
 	for k, v := range rawData {
 		if !knownFields[k] {
-			extraFields[k] = v
+			values, err := extraFieldValues(v)
+			if err != nil {
+				fmt.Printf("Unable to convert extra field %q of type %T: %v\n", k, v, err)
+				continue
+			}
+			extraFields[k] = values
 		}
 	}
 	if len(extraFields) > 0 {
 		return extraFields
 	}
 	return nil
+}
+
+func extraFieldValues(value any) ([]string, error) {
+	reflectedValue := reflect.ValueOf(value)
+	if reflectedValue.IsValid() && (reflectedValue.Kind() == reflect.Array || reflectedValue.Kind() == reflect.Slice) {
+		values := make([]string, reflectedValue.Len())
+		for i := range values {
+			converted, err := extraFieldValueAsString(reflectedValue.Index(i).Interface())
+			if err != nil {
+				return nil, err
+			}
+			values[i] = converted
+		}
+		return values, nil
+	}
+
+	converted, err := extraFieldValueAsString(value)
+	if err != nil {
+		return nil, err
+	}
+	return []string{converted}, nil
+}
+
+func extraFieldValueAsString(value any) (string, error) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func decodeJSONWithNumbers(data []byte, target any) error {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	return decoder.Decode(target)
 }
 
 func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Repo, error) {
@@ -91,7 +138,7 @@ func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Rep
 		}
 
 		var rawRepo map[string]any
-		if err := json.Unmarshal(data, &rawRepo); err == nil {
+		if err := decodeJSONWithNumbers(data, &rawRepo); err == nil {
 			onerepo.ExtraFields = extractExtraFields(rawRepo)
 		}
 
@@ -135,7 +182,7 @@ func tryParseJsonRepos(data []byte, repofile string, provisionEmpty bool) ([]Rep
 	}
 
 	var rawRepos []map[string]any
-	if err := json.Unmarshal(data, &rawRepos); err == nil && len(rawRepos) == len(repos) {
+	if err := decodeJSONWithNumbers(data, &rawRepos); err == nil && len(rawRepos) == len(repos) {
 		for i := range repos {
 			repos[i].ExtraFields = extractExtraFields(rawRepos[i])
 		}
