@@ -106,6 +106,8 @@ func Provision(
 	fmt.Printf("  Updated permission targets: %d\n", stats.UpdatedPermissionCount)
 	fmt.Printf("  Created properties: %d\n", stats.CreatedPropertyCount)
 	fmt.Printf("  Updated properties: %d\n", stats.UpdatedPropertyCount)
+	fmt.Printf("  Deleted properties: %d\n", stats.DeletedPropertyCount)
+	fmt.Printf("  Remote cache repos not yet created: %d\n", stats.RemoteRepoMissingCount)
 
 	return nil
 }
@@ -367,6 +369,10 @@ func hasRepoDiff(repo Repo, allrepos []ArtifactoryRepoDetailsResponse) (bool, *A
 }
 
 func hasPropertiesDiff(repo Repo, allproperties []repoProperties, propertiesConfig PropertiesConfig) (bool, repoProperties) {
+	if repo.Rclass == "virtual" {
+		return false, repoProperties{}
+	}
+
 	repoName := repo.Name
 	if repo.Rclass == "remote" {
 		repoName = repo.Name + "-cache"
@@ -658,7 +664,7 @@ func setRepoProperties(
 			return fmt.Errorf("error generating repo properties diff: %w", err)
 		}
 		if diffText != "" {
-			fmt.Printf("'%s': Property diff:\n%s", repoName, diffText)
+			log.Printf("Repo properties diff: '%s'\n%s", repoName, diffText)
 		}
 	}
 
@@ -702,7 +708,10 @@ func setRepoProperties(
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != 204 && resp.StatusCode != 200 {
+			if repo.Rclass == "remote" && resp.StatusCode == 404 {
+				stats.RemoteRepoMissingCount++
+				return nil
+			} else if resp.StatusCode != 204 && resp.StatusCode != 200 {
 				body, _ := io.ReadAll(resp.Body)
 				return fmt.Errorf("error setting repo properties, unexpected status: %s, body: %s", resp.Status, body)
 			}
@@ -739,11 +748,15 @@ func setRepoProperties(
 				return fmt.Errorf("error deleting unused properties: %w", err)
 			}
 			defer resp.Body.Close()
-			if resp.StatusCode != 204 && resp.StatusCode != 200 {
+			if repo.Rclass == "remote" && resp.StatusCode == 404 {
+				stats.RemoteRepoMissingCount++
+				return nil
+			} else if resp.StatusCode != 204 && resp.StatusCode != 200 {
 				body, _ := io.ReadAll(resp.Body)
 				return fmt.Errorf("error deleting unused properties, unexpected status: %s, body: %s", resp.Status, body)
 			}
 		}
+		stats.DeletedPropertyCount += len(unused)
 		fmt.Printf("'%s': Deleted unused properties: %s.\n", repoName, strings.Join(unused, ", "))
 	}
 
@@ -879,13 +892,11 @@ func updateExistingPermission(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
 	if showDiff {
-		difftext, _ := PrintDiff(artifactjsonsource, string(json), true)
-		fmt.Printf("%s", difftext)
+		artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
+		difftext, _ := PrintDiff(artifactjsonsource, string(json), false)
+		log.Printf("Permission (existing) diff: '%s'\n%s", permissionName, difftext)
 	}
-	difftext, _ := PrintDiff(artifactjsonsource, string(json), false)
-	log.Printf("Permission (existing) diff: '%s'\n%s", permissionName, difftext)
 
 	if !dryRun {
 		resp, err := client.Do(req)

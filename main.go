@@ -28,7 +28,7 @@ func main() {
 	combineReposFlag := flag.Bool("c", false, "Combine identical repos, when generating.")
 	dryRunFlag := flag.Bool("d", false, "Enable dry run mode (read-only, no changes will be made).")
 	provisionEmptyFlag := flag.Bool("e", false, "Provision empty files.")
-	showDiffFlag := flag.Bool("f", false, "Show json diff, when applying permission targets.")
+	showDiffFlag := flag.Bool("f", false, "Log json diff, when applying permission targets.")
 	generateFlag := flag.Bool("g", false, "Generate repo file.")
 	useCacheFlag := flag.Bool("h", false, "Use local cache folder instead of Artifactory api, when retrieving.")
 	propertiesConfigFilenameString := flag.String("i", "", "Write properties to Artifactory, configuration file.")

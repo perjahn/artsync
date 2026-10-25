@@ -215,6 +215,8 @@ type Statistics struct {
 	UpdatedPermissionCount          int
 	CreatedPropertyCount            int
 	UpdatedPropertyCount            int
+	DeletedPropertyCount            int
+	RemoteRepoMissingCount          int
 }
 
 type repoDiff struct {

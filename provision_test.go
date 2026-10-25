@@ -720,13 +720,12 @@ func TestSetRepoPropertiesCountsCreatedAndUpdated(t *testing.T) {
 }
 
 func TestSetRepoPropertiesRemoteRepoUsesCache(t *testing.T) {
-	var capturedPath string
-	var capturedMethod string
+	ClearStats()
+	var capturedMethods []string
 	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
-		capturedPath = req.URL.Path
-		capturedMethod = req.Method
+		capturedMethods = append(capturedMethods, req.Method)
 		return &http.Response{
-			StatusCode: 204,
+			StatusCode: http.StatusNotFound,
 			Body:       io.NopCloser(strings.NewReader("")),
 			Header:     make(http.Header),
 		}, nil
@@ -742,15 +741,20 @@ func TestSetRepoPropertiesRemoteRepoUsesCache(t *testing.T) {
 	}
 	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, nil, propertiesConfig, false)
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
+		"mycorp.old": {"value"},
+	}, propertiesConfig, false)
 	if err != nil {
 		t.Fatalf("setRepoProperties() error = %v", err)
 	}
-	if capturedMethod != "PUT" {
-		t.Fatalf("request method = %q, want PUT", capturedMethod)
+	if !slices.Equal(capturedMethods, []string{"PUT"}) {
+		t.Fatalf("request methods = %v, want [PUT] after cache-missing response", capturedMethods)
 	}
-	if capturedPath != "/artifactory/api/storage/remote-repo-cache" {
-		t.Fatalf("request path = %q, want cache repo path", capturedPath)
+	if stats.CreatedPropertyCount != 0 || stats.UpdatedPropertyCount != 0 {
+		t.Errorf("property counts = created %d, updated %d; want both 0 when cache is missing", stats.CreatedPropertyCount, stats.UpdatedPropertyCount)
+	}
+	if stats.RemoteRepoMissingCount != 1 {
+		t.Errorf("RemoteRepoMissingCount = %d, want 1", stats.RemoteRepoMissingCount)
 	}
 }
 
@@ -829,6 +833,7 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 
 // Test setRepoProperties deletes unused properties
 func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
+	ClearStats()
 	repo := Repo{
 		Name:        "test-repo",
 		Description: "Test repository",
@@ -906,6 +911,50 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 
 	if strings.Contains(deleteUrl, "other.key") {
 		t.Errorf("SetRepoPropertiesDeleteUnused: DELETE should NOT include other.key (different prefix), got %s", deleteUrl)
+	}
+	if stats.DeletedPropertyCount != 2 {
+		t.Errorf("DeletedPropertyCount = %d, want 2", stats.DeletedPropertyCount)
+	}
+}
+
+func TestSetRepoPropertiesRemoteDeleteMissingCache(t *testing.T) {
+	ClearStats()
+	var capturedPath string
+	var capturedMethods []string
+	client := mockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		capturedMethods = append(capturedMethods, req.Method)
+		if req.Method == "DELETE" {
+			capturedPath = req.URL.Path
+		}
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	repo := Repo{
+		Name:   "remote-repo",
+		Rclass: "remote",
+	}
+	propertiesConfig := PropertiesConfig{SetProperties: true, Prefix: "mycorp"}
+	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, map[string][]string{
+		"mycorp.old": {"value"},
+	}, propertiesConfig, false)
+	if err != nil {
+		t.Fatalf("setRepoProperties() error = %v", err)
+	}
+	if capturedPath != "/artifactory/api/storage/remote-repo-cache" {
+		t.Errorf("request path = %q, want remote cache path", capturedPath)
+	}
+	if !slices.Equal(capturedMethods, []string{"DELETE"}) {
+		t.Errorf("request methods = %v, want [DELETE]", capturedMethods)
+	}
+	if stats.DeletedPropertyCount != 0 {
+		t.Errorf("DeletedPropertyCount = %d, want 0 for missing cache", stats.DeletedPropertyCount)
+	}
+	if stats.RemoteRepoMissingCount != 1 {
+		t.Errorf("RemoteRepoMissingCount = %d, want 1", stats.RemoteRepoMissingCount)
 	}
 }
 
