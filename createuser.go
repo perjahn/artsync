@@ -15,7 +15,7 @@ var queryldapCreateUserFn = queryldap
 func CreateUser(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	ldapUsername string,
 	ldapPassword string,
 	username string,
@@ -81,7 +81,7 @@ func CreateUser(
 			}
 			log.Printf("emailaddress: '%s'\n", emailaddress)
 
-			err = createSingleUser(client, baseurl, token, username, emailaddress, dryRun)
+			err = createSingleUser(client, baseurl, credentialEntity, username, emailaddress, dryRun)
 			if err != nil {
 				return false, fmt.Errorf("creating failed: %w", err)
 			}
@@ -94,7 +94,7 @@ func CreateUser(
 	return false, nil
 }
 
-func createSingleUser(client *http.Client, baseurl, token, username, emailaddress string, dryRun bool) error {
+func createSingleUser(client *http.Client, baseurl string, credentialEntity CredentialEntity, username, emailaddress string, dryRun bool) error {
 	fmt.Printf("Creating user: '%s'\n", username)
 
 	url := fmt.Sprintf("%s/access/api/v2/users", baseurl)
@@ -115,7 +115,11 @@ func createSingleUser(client *http.Client, baseurl, token, username, emailaddres
 		return fmt.Errorf("error creating user, error creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.ApiKey)
+	}
 
 	if !dryRun {
 		resp, err := client.Do(req)

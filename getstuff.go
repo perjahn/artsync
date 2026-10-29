@@ -16,7 +16,7 @@ var pagenumPermissions int
 func GetStuff(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	retrieveldapsettings bool,
 	usecache bool) (
 	[]ArtifactoryRepoDetailsResponse,
@@ -36,42 +36,42 @@ func GetStuff(
 		}
 	}
 
-	repos, err := getRepos(client, baseurl, token, cachefolder, usecache)
+	repos, err := getRepos(client, baseurl, credentialEntity, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo count: %d\n", len(repos))
 
-	repodetails, err := getRepoDetails(client, baseurl, token, repos, cachefolder, usecache)
+	repodetails, err := getRepoDetails(client, baseurl, credentialEntity, repos, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Repo details count: %d\n", len(repodetails))
 
-	permissions, err := getPermissions(client, baseurl, token, cachefolder, usecache)
+	permissions, err := getPermissions(client, baseurl, credentialEntity, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Permissions count: %d\n", len(permissions))
 
-	users, err := getUsers(client, baseurl, token, cachefolder, usecache)
+	users, err := getUsers(client, baseurl, credentialEntity, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("User count: %d\n", len(users))
 
-	groups, err := getGroups(client, baseurl, token, cachefolder, usecache)
+	groups, err := getGroups(client, baseurl, credentialEntity, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
 	fmt.Printf("Group count: %d\n", len(groups))
 
-	permissiondetails, err := getPermissionDetails(client, baseurl, token, permissions, cachefolder, usecache)
+	permissiondetails, err := getPermissionDetails(client, baseurl, credentialEntity, permissions, cachefolder, usecache)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -81,14 +81,14 @@ func GetStuff(
 	var ldapsettings []ArtifactoryLDAPSettings
 	var ldapgroupsettings []ArtifactoryLDAPGroupSettings
 	if retrieveldapsettings {
-		ldapsettings, err = getLDAPSettings(client, baseurl, token, cachefolder, usecache)
+		ldapsettings, err = getLDAPSettings(client, baseurl, credentialEntity, cachefolder, usecache)
 		if err != nil {
 			return nil, nil, nil, nil, nil, nil, err
 		}
 
 		fmt.Printf("LDAP settings count: %d\n", len(ldapsettings))
 
-		ldapgroupsettings, err = getLDAPGroupSettings(client, baseurl, token, cachefolder, usecache)
+		ldapgroupsettings, err = getLDAPGroupSettings(client, baseurl, credentialEntity, cachefolder, usecache)
 		if err != nil {
 			return nil, nil, nil, nil, nil, nil, err
 		}
@@ -99,7 +99,7 @@ func GetStuff(
 	return repodetails, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, nil
 }
 
-func getUsers(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryUser, error) {
+func getUsers(client *http.Client, baseurl string, credentialEntity CredentialEntity, cachefolder string, usecache bool) ([]ArtifactoryUser, error) {
 	var allusers []ArtifactoryUser
 	cachefilename := filepath.Join(cachefolder, "allusers.json")
 
@@ -127,7 +127,7 @@ func getUsers(client *http.Client, baseurl string, token string, cachefolder str
 		var users []ArtifactoryUser
 		var err error
 
-		users, cursor, err = getUsersPage(client, baseurl, token, cursor)
+		users, cursor, err = getUsersPage(client, baseurl, credentialEntity, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +150,7 @@ func getUsers(client *http.Client, baseurl string, token string, cachefolder str
 	}
 }
 
-func getUsersPage(client *http.Client, baseurl string, token string, cursor string) ([]ArtifactoryUser, string, error) {
+func getUsersPage(client *http.Client, baseurl string, credentialEntity CredentialEntity, cursor string) ([]ArtifactoryUser, string, error) {
 	var url string
 	if cursor == "" {
 		url = fmt.Sprintf("%s/access/api/v2/users", baseurl)
@@ -163,7 +163,11 @@ func getUsersPage(client *http.Client, baseurl string, token string, cursor stri
 		return nil, "", fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -191,7 +195,7 @@ func getUsersPage(client *http.Client, baseurl string, token string, cursor stri
 	return users.Users, users.Cursor, nil
 }
 
-func getGroups(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryGroup, error) {
+func getGroups(client *http.Client, baseurl string, credentialEntity CredentialEntity, cachefolder string, usecache bool) ([]ArtifactoryGroup, error) {
 	var allgroups []ArtifactoryGroup
 	cachefilename := filepath.Join(cachefolder, "allgroups.json")
 
@@ -219,7 +223,7 @@ func getGroups(client *http.Client, baseurl string, token string, cachefolder st
 		var groups []ArtifactoryGroup
 		var err error
 
-		groups, cursor, err = getGroupsPage(client, baseurl, token, cursor)
+		groups, cursor, err = getGroupsPage(client, baseurl, credentialEntity, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +246,7 @@ func getGroups(client *http.Client, baseurl string, token string, cachefolder st
 	}
 }
 
-func getGroupsPage(client *http.Client, baseurl string, token string, cursor string) ([]ArtifactoryGroup, string, error) {
+func getGroupsPage(client *http.Client, baseurl string, credentialEntity CredentialEntity, cursor string) ([]ArtifactoryGroup, string, error) {
 	var url string
 	if cursor == "" {
 		url = fmt.Sprintf("%s/access/api/v2/groups", baseurl)
@@ -255,7 +259,11 @@ func getGroupsPage(client *http.Client, baseurl string, token string, cursor str
 		return nil, "", fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -283,7 +291,7 @@ func getGroupsPage(client *http.Client, baseurl string, token string, cursor str
 	return groups.Groups, groups.Cursor, nil
 }
 
-func getRepos(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryRepoResponse, error) {
+func getRepos(client *http.Client, baseurl string, credentialEntity CredentialEntity, cachefolder string, usecache bool) ([]ArtifactoryRepoResponse, error) {
 	var repos []ArtifactoryRepoResponse
 	cachefilename := filepath.Join(cachefolder, "allrepos.json")
 
@@ -311,7 +319,11 @@ func getRepos(client *http.Client, baseurl string, token string, cachefolder str
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -343,7 +355,7 @@ func getRepos(client *http.Client, baseurl string, token string, cachefolder str
 	return repos, nil
 }
 
-func getRepoDetails(client *http.Client, baseurl string, token string, repos []ArtifactoryRepoResponse, cachefolder string, usecache bool) ([]ArtifactoryRepoDetailsResponse, error) {
+func getRepoDetails(client *http.Client, baseurl string, credentialEntity CredentialEntity, repos []ArtifactoryRepoResponse, cachefolder string, usecache bool) ([]ArtifactoryRepoDetailsResponse, error) {
 	var allrepodetails []ArtifactoryRepoDetailsResponse
 	cachefilename := filepath.Join(cachefolder, "allrepodetails.json")
 
@@ -376,7 +388,11 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 			return nil, fmt.Errorf("error creating request: %w", err)
 		}
 
-		req.Header.Set("Authorization", "Bearer "+token)
+		if credentialEntity.IsToken {
+			req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+		} else {
+			req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -427,7 +443,7 @@ func getRepoDetails(client *http.Client, baseurl string, token string, repos []A
 	return allrepodetails, nil
 }
 
-func getPermissions(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryPermission, error) {
+func getPermissions(client *http.Client, baseurl string, credentialEntity CredentialEntity, cachefolder string, usecache bool) ([]ArtifactoryPermission, error) {
 	var allpermissions []ArtifactoryPermission
 	cachefilename := filepath.Join(cachefolder, "allpermissions.json")
 
@@ -455,7 +471,7 @@ func getPermissions(client *http.Client, baseurl string, token string, cachefold
 		var permissions []ArtifactoryPermission
 		var err error
 
-		permissions, cursor, err = getPermissionsPage(client, baseurl, token, cursor)
+		permissions, cursor, err = getPermissionsPage(client, baseurl, credentialEntity, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -478,7 +494,7 @@ func getPermissions(client *http.Client, baseurl string, token string, cachefold
 	}
 }
 
-func getPermissionsPage(client *http.Client, baseurl string, token string, cursor string) ([]ArtifactoryPermission, string, error) {
+func getPermissionsPage(client *http.Client, baseurl string, credentialEntity CredentialEntity, cursor string) ([]ArtifactoryPermission, string, error) {
 	var url string
 	if cursor == "" {
 		url = fmt.Sprintf("%s/access/api/v2/permissions", baseurl)
@@ -491,7 +507,11 @@ func getPermissionsPage(client *http.Client, baseurl string, token string, curso
 		return nil, "", fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -519,7 +539,7 @@ func getPermissionsPage(client *http.Client, baseurl string, token string, curso
 	return permissions.Permissions, permissions.Cursor, nil
 }
 
-func getPermissionDetails(client *http.Client, baseurl string, token string, permissions []ArtifactoryPermission, cachefolder string, usecache bool) ([]ArtifactoryPermissionDetails, error) {
+func getPermissionDetails(client *http.Client, baseurl string, credentialEntity CredentialEntity, permissions []ArtifactoryPermission, cachefolder string, usecache bool) ([]ArtifactoryPermissionDetails, error) {
 	var allpermissiondetails []ArtifactoryPermissionDetails
 	cachefilename := filepath.Join(cachefolder, "allpermissiondetails.json")
 
@@ -552,7 +572,11 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 			return nil, fmt.Errorf("error creating request: %w", err)
 		}
 
-		req.Header.Set("Authorization", "Bearer "+token)
+		if credentialEntity.IsToken {
+			req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+		} else {
+			req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -604,7 +628,7 @@ func getPermissionDetails(client *http.Client, baseurl string, token string, per
 	return allpermissiondetails, nil
 }
 
-func getLDAPSettings(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryLDAPSettings, error) {
+func getLDAPSettings(client *http.Client, baseurl string, credentialEntity CredentialEntity, cachefolder string, usecache bool) ([]ArtifactoryLDAPSettings, error) {
 	var settings []ArtifactoryLDAPSettings
 	cachefilename := filepath.Join(cachefolder, "ldap_settings.json")
 
@@ -633,7 +657,11 @@ func getLDAPSettings(client *http.Client, baseurl string, token string, cachefol
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -670,7 +698,7 @@ func getLDAPSettings(client *http.Client, baseurl string, token string, cachefol
 	return settings, nil
 }
 
-func getLDAPGroupSettings(client *http.Client, baseurl string, token string, cachefolder string, usecache bool) ([]ArtifactoryLDAPGroupSettings, error) {
+func getLDAPGroupSettings(client *http.Client, baseurl string, credentialEntity CredentialEntity, cachefolder string, usecache bool) ([]ArtifactoryLDAPGroupSettings, error) {
 	var groups []ArtifactoryLDAPGroupSettings
 	cachefilename := filepath.Join(cachefolder, "ldap_groups.json")
 
@@ -699,7 +727,11 @@ func getLDAPGroupSettings(client *http.Client, baseurl string, token string, cac
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+type CredentialEntity struct {
+	IsToken bool
+	Token   string
+	ApiKey  string
+}
+
 func main() {
 	logFileName := fmt.Sprintf("artsync-%s.log", time.Now().Format("20060102_150405"))
 	f, err := os.OpenFile(logFileName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -73,7 +79,7 @@ func main() {
 	}
 
 	baseurl := getBaseURL(args[0])
-	token := getToken(args[1])
+	credentials := getCredentials(args[1])
 	repofiles := getRepoFiles(args[2:])
 
 	if generate {
@@ -155,7 +161,7 @@ func main() {
 		}
 	}
 
-	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, token, importUsersAndGroupsFilename != "", useCache)
+	repos, users, groups, permissiondetails, ldapsettings, ldapgroupsettings, err := GetStuff(client, baseurl, credentials, importUsersAndGroupsFilename != "", useCache)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -192,7 +198,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		err = Provision(client, baseurl, token, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, propertiesConfig, dryRun)
+		err = Provision(client, baseurl, credentials, reposToProvision, repos, users, groups, permissiondetails, showDiff, allowpatterns, ldapConfig, propertiesConfig, dryRun)
 		if err != nil {
 			fmt.Printf("Error provisioning: %v\n", err)
 			os.Exit(1)
@@ -382,26 +388,32 @@ func getBaseURL(arg string) string {
 	return baseurl
 }
 
-func getToken(arg string) string {
-	var token string
+func getCredentials(arg string) CredentialEntity {
+	var credentials CredentialEntity
 
 	if envToken := os.Getenv("ARTSYNC_TOKEN"); envToken != "" {
-		token = envToken
+		credentials = CredentialEntity{
+			IsToken: true,
+			Token:   envToken,
+		}
 	} else {
 		data, err := os.ReadFile(arg)
 		if err != nil {
 			fmt.Printf("Error reading token file: %v\n", err)
 			os.Exit(1)
 		}
-		token = string(data)
+		credentials = CredentialEntity{
+			IsToken: false,
+			ApiKey:  string(data),
+		}
 	}
-	token = strings.TrimSpace(token)
-	if token == "" {
+	credentials.ApiKey = strings.TrimSpace(credentials.ApiKey)
+	if credentials.ApiKey == "" {
 		fmt.Println("Error: Token is empty.")
 		os.Exit(1)
 	}
 
-	return token
+	return credentials
 }
 
 func getRepoFiles(args []string) []string {

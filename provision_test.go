@@ -51,7 +51,7 @@ func TestProvisionSimple(t *testing.T) {
 	}
 	for i, tc := range tests {
 		var client *http.Client
-		err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+		err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 		if err != nil {
 			t.Errorf("ProvisionSimple (%d/%d): error = %v", i+1, len(tests), err)
 		}
@@ -122,7 +122,7 @@ func TestProvisionPermissions(t *testing.T) {
 		return response, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionPermissions: error = %v", err)
 	}
@@ -208,7 +208,7 @@ func TestProvisionRenamedPermissions(t *testing.T) {
 		return response, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionRenamedPermissions: error = %v", err)
 	}
@@ -401,7 +401,7 @@ func TestProvisionLdap(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdap: unexpected error = %v", err)
 	}
@@ -568,7 +568,7 @@ func TestProvisionLdapFail(t *testing.T) {
 
 	queryldapImportGroupFn = queryldapCreateUserFn
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, false, tc.allowPatterns, ldapConfig, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionLdapFail: unexpected error = %v", err)
 	}
@@ -605,9 +605,9 @@ func TestSetRepoProperties(t *testing.T) {
 		capturedUrl = req.URL.String()
 		capturedMethod = req.Method
 
-		authHeader := req.Header.Get("Authorization")
-		if authHeader != "Bearer test-token" {
-			t.Errorf("SetRepoProperties: expected Authorization header 'Bearer test-token', got '%s'", authHeader)
+		authHeader := req.Header.Get("X-JFrog-Art-Api")
+		if authHeader != "test-token" {
+			t.Errorf("SetRepoProperties: expected Authorization header 'test-token', got '%s'", authHeader)
 		}
 
 		if req.Method == "GET" {
@@ -627,7 +627,13 @@ func TestSetRepoProperties(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	creds := CredentialEntity{
+		IsToken: false,
+		Token:   "test-user",
+		ApiKey:  "test-token",
+	}
+
+	err := setRepoProperties(client, "https://artifactory.example.com", creds, repo, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoProperties: unexpected error = %v", err)
 	}
@@ -686,7 +692,13 @@ func TestSetRepoPropertiesEmpty(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	creds := CredentialEntity{
+		IsToken: false,
+		Token:   "test-user",
+		ApiKey:  "test-token",
+	}
+
+	err := setRepoProperties(client, "https://artifactory.example.com", creds, repo, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoPropertiesEmpty: unexpected error = %v", err)
 	}
@@ -734,7 +746,13 @@ func TestSetRepoPropertiesDeleteUnused(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	creds := CredentialEntity{
+		IsToken: false,
+		Token:   "test-user",
+		ApiKey:  "test-token",
+	}
+
+	err := setRepoProperties(client, "https://artifactory.example.com", creds, repo, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoPropertiesDeleteUnused: unexpected error = %v", err)
 	}
@@ -800,7 +818,13 @@ func TestSetRepoPropertiesNoUpdate(t *testing.T) {
 		}, nil
 	})
 
-	err := setRepoProperties(client, "https://artifactory.example.com", "test-token", repo, propertiesConfig, false)
+	creds := CredentialEntity{
+		IsToken: false,
+		Token:   "test-user",
+		ApiKey:  "test-token",
+	}
+
+	err := setRepoProperties(client, "https://artifactory.example.com", creds, repo, propertiesConfig, false)
 	if err != nil {
 		t.Errorf("SetRepoPropertiesNoUpdate: unexpected error = %v", err)
 	}
@@ -873,7 +897,14 @@ func TestProvisionCreateVirtualRepo(t *testing.T) {
 	})
 
 	ClearStats()
-	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+
+	creds := CredentialEntity{
+		IsToken: false,
+		Token:   "test-user",
+		ApiKey:  "test-token",
+	}
+
+	err = Provision(client, "", creds, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionCreateVirtualRepo: error = %v", err)
 	}
@@ -948,7 +979,7 @@ func TestProvisionUpdateVirtualRepo(t *testing.T) {
 	})
 
 	ClearStats()
-	err = Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err = Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionUpdateVirtualRepo: error = %v", err)
 	}
@@ -1005,7 +1036,7 @@ func TestProvisionVirtualRepoMissingRepoList(t *testing.T) {
 		return nil, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionVirtualRepoMissingRepoList: error = %v", err)
 	}
@@ -1059,7 +1090,7 @@ func TestProvisionVirtualRepoMissingRepoListTriggerChange(t *testing.T) {
 		return response, nil
 	})
 
-	err := Provision(client, "", "", tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
+	err := Provision(client, "", CredentialEntity{}, tc.reposToProvision, tc.repos, tc.users, tc.groups, tc.permissiondetails, true, tc.allowPatterns, LdapConfig{}, PropertiesConfig{}, tc.dryRun)
 	if err != nil {
 		t.Errorf("ProvisionVirtualRepoMissingRepoListTriggerChange: error = %v", err)
 	}

@@ -47,7 +47,7 @@ func ClearStats() {
 func Provision(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	reposToProvision []Repo,
 	allrepos []ArtifactoryRepoDetailsResponse,
 	allusers []ArtifactoryUser,
@@ -65,7 +65,7 @@ func Provision(
 			return fmt.Errorf("unable to obtain UI tokens for Artifactory, cannot import ldap groups: %w", err)
 		}
 
-		reposToProvision, allusers, allgroups = provisionUsersAndGroups(client, baseurl, token, reposToProvision, allusers, allgroups, ldapConfig, accessToken, refreshToken, dryRun)
+		reposToProvision, allusers, allgroups = provisionUsersAndGroups(client, baseurl, credentialEntity, reposToProvision, allusers, allgroups, ldapConfig, accessToken, refreshToken, dryRun)
 	}
 
 	reposWithDiffs := findReposWithDiffs(reposToProvision, allrepos, allpermissiondetails, allusers, allowpatterns)
@@ -74,7 +74,7 @@ func Provision(
 
 	for _, diffRepo := range reposWithDiffs {
 		if diffRepo.hasRepoDiff {
-			err := provisionRepo(client, baseurl, token, diffRepo.repo, diffRepo.existingRepo, dryRun)
+			err := provisionRepo(client, baseurl, credentialEntity, diffRepo.repo, diffRepo.existingRepo, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo: %v\n", diffRepo.repo.Name, err)
 				stats.IgnoredInvalidRepoCount++
@@ -82,7 +82,7 @@ func Provision(
 		}
 
 		if diffRepo.hasPermDiff {
-			err := provisionPermissionTarget(client, baseurl, token, diffRepo.repo, diffRepo.existingPermission, diffRepo.permUsers, diffRepo.permGroups, showDiff, dryRun)
+			err := provisionPermissionTarget(client, baseurl, credentialEntity, diffRepo.repo, diffRepo.existingPermission, diffRepo.permUsers, diffRepo.permGroups, showDiff, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Ignoring repo's permission target: %v\n", diffRepo.repo.Name, err)
 				stats.IgnoredInvalidPermissionCount++
@@ -90,7 +90,7 @@ func Provision(
 		}
 
 		if diffRepo.hasRepoDiff || diffRepo.hasPermDiff {
-			err := setRepoProperties(client, baseurl, token, diffRepo.repo, propertiesConfig, dryRun)
+			err := setRepoProperties(client, baseurl, credentialEntity, diffRepo.repo, propertiesConfig, dryRun)
 			if err != nil {
 				fmt.Printf("'%s': Warning: Error setting properties: %v\n", diffRepo.repo.Name, err)
 			}
@@ -156,7 +156,7 @@ func findReposWithDiffs(
 func provisionUsersAndGroups(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	reposToProvision []Repo,
 	allusers []ArtifactoryUser,
 	allgroups []ArtifactoryGroup,
@@ -256,7 +256,7 @@ func provisionUsersAndGroups(
 			createdUser, errUser = CreateUser(
 				client,
 				baseurl,
-				token,
+				credentialEntity,
 				ldapConfig.LdapUsername,
 				ldapConfig.LdapPassword,
 				ug,
@@ -353,7 +353,7 @@ func hasRepoDiff(repo Repo, allrepos []ArtifactoryRepoDetailsResponse) (bool, *A
 func provisionRepo(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	existingRepo *ArtifactoryRepoDetailsResponse,
 	dryRun bool) error {
@@ -371,14 +371,14 @@ func provisionRepo(
 	if existingRepo == nil {
 		fmt.Printf("'%s': Repo does not exist, creating...\n", repo.Name)
 
-		err := createNewRepo(client, baseurl, token, repo, dryRun)
+		err := createNewRepo(client, baseurl, credentialEntity, repo, dryRun)
 		if err != nil {
 			return err
 		}
 	} else {
 		fmt.Printf("'%s': Repo already exists, updating...\n", repo.Name)
 
-		err := updateExistingRepo(client, baseurl, token, repo, *existingRepo, dryRun)
+		err := updateExistingRepo(client, baseurl, credentialEntity, repo, *existingRepo, dryRun)
 		if err != nil {
 			return err
 		}
@@ -390,7 +390,7 @@ func provisionRepo(
 func updateExistingRepo(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	existingRepo ArtifactoryRepoDetailsResponse,
 	dryRun bool,
@@ -431,7 +431,11 @@ func updateExistingRepo(
 		return fmt.Errorf("error updating repo, error creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	if !dryRun {
 		resp, err := client.Do(req)
@@ -460,7 +464,7 @@ func updateExistingRepo(
 func createNewRepo(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	dryRun bool,
 ) error {
@@ -490,7 +494,11 @@ func createNewRepo(
 		return fmt.Errorf("error creating repo, error creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	fields := []string{}
 	if repo.Description != "" {
@@ -537,7 +545,7 @@ func createNewRepo(
 func setRepoProperties(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	propertiesConfig PropertiesConfig,
 	dryRun bool,
@@ -584,7 +592,7 @@ func setRepoProperties(
 		return nil
 	}
 
-	currentProps, err := getRepoProperties(client, baseurl, token, repoName)
+	currentProps, err := getRepoProperties(client, baseurl, credentialEntity, repoName)
 	if err != nil {
 		return err
 	}
@@ -613,7 +621,11 @@ func setRepoProperties(
 		if err != nil {
 			return fmt.Errorf("error creating properties request: %w", err)
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
+		if credentialEntity.IsToken {
+			req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+		} else {
+			req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+		}
 
 		if !dryRun {
 			resp, err := client.Do(req)
@@ -646,7 +658,11 @@ func setRepoProperties(
 		if err != nil {
 			return fmt.Errorf("error creating delete properties request: %w", err)
 		}
-		reqDel.Header.Set("Authorization", "Bearer "+token)
+		if credentialEntity.IsToken {
+			reqDel.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+		} else {
+			reqDel.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+		}
 		if !dryRun {
 			resp, err := client.Do(reqDel)
 			if err != nil {
@@ -671,7 +687,7 @@ type ArtifactoryPropertiesResponse struct {
 func getRepoProperties(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repoName string,
 ) (map[string][]string, error) {
 	url := fmt.Sprintf("%s/artifactory/api/storage/%s?properties", baseurl, repoName)
@@ -680,7 +696,11 @@ func getRepoProperties(
 	if err != nil {
 		return nil, fmt.Errorf("error getting properties request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -774,7 +794,7 @@ func hasPermissionTargetDiff(repo Repo, allpermissiondetails []ArtifactoryPermis
 func provisionPermissionTarget(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	existingPermission *ArtifactoryPermissionDetails,
 	permUsers map[string][]string,
@@ -799,18 +819,18 @@ func provisionPermissionTarget(
 	if existingPermission == nil {
 		fmt.Printf("'%s': Permission target does not exist, creating...\n", permissionName)
 
-		return createNewPermission(client, baseurl, token, repo, repoName, permissionName, permUsers, permGroups, dryRun)
+		return createNewPermission(client, baseurl, credentialEntity, repo, repoName, permissionName, permUsers, permGroups, dryRun)
 	} else {
 		fmt.Printf("'%s': Permission target already exists, updating...\n", permissionName)
 
-		return updateExistingPermission(client, baseurl, token, repo, repoName, permissionName, permUsers, permGroups, *existingPermission, showDiff, dryRun)
+		return updateExistingPermission(client, baseurl, credentialEntity, repo, repoName, permissionName, permUsers, permGroups, *existingPermission, showDiff, dryRun)
 	}
 }
 
 func updateExistingPermission(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	repoName string,
 	permissionName string,
@@ -852,7 +872,11 @@ func updateExistingPermission(
 		return fmt.Errorf("error updating permission target, error creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	artifactjsonsource := GetArtifactJson(existingPermission.JsonSource)
 	if showDiff {
@@ -889,7 +913,7 @@ func updateExistingPermission(
 func createNewPermission(
 	client *http.Client,
 	baseurl string,
-	token string,
+	credentialEntity CredentialEntity,
 	repo Repo,
 	repoName string,
 	permissionName string,
@@ -930,7 +954,11 @@ func createNewPermission(
 		return fmt.Errorf("error creating permission target, error creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	if credentialEntity.IsToken {
+		req.Header.Set("Authorization", "Bearer "+credentialEntity.Token)
+	} else {
+		req.Header.Set("X-JFrog-Art-Api", credentialEntity.ApiKey)
+	}
 
 	log.Printf("Permission (new): '%s'\n%s\n", permissionName, string(json))
 
